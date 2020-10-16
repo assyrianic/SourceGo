@@ -16,7 +16,6 @@ package main
 
 import (
 	"os"
-	//"strings"
 	"./utils"
 	"./lexer"
 	"io/ioutil"
@@ -31,10 +30,10 @@ func main() {
 	for _, file := range files {
 		code, err := ioutil.ReadFile("./" + file)
 		utils.CheckErr(err)
-		prepped_code := lexer.Preprocess(code)
-		tokens := lexer.Tokenize(prepped_code)
+		tokens := lexer.Tokenize(code)
 		
-		fmt.Println(tokens)
-		//utils.WriteToFile(file + ".gp", string(tokens))
+		for _, tok := range tokens {
+			fmt.Println(tok)
+		}
 	}
 }
