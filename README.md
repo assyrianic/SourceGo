@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.3a
+v0.4a
 
 ## Introduction
 

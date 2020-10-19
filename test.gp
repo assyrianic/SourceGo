@@ -29,10 +29,11 @@ func IsValidClient(client int, replaycheck bool) bool {
 	}
 }
 
-
-/// stock functions are represented as snake_case or camelCase
 func GetOwner(ent int) int {
 	if IsValidEntity(ent) {
 		return GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity")
 	} else { return -1 }
 }
+
+func Func1(x, n int) int
+func (n int) Receiver(c float)
