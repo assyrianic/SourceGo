@@ -1,5 +1,5 @@
 /**
- * gopawn.go
+ * go2sp.go
  * 
  * Copyright 2020 Nirari Technologies.
  * 
@@ -43,7 +43,7 @@ func main() {
 			sp_gen := ASTtoSP.SPGen{ SrcGoAST: f }
 			sp_gen.PrintAST()
 			sp_gen.AnalyzeFile()
-			if err := WriteToFile(file + ".sp", sp_gen.GenCode.String()); err != nil {
+			if err := WriteToFile(file + ".sp", sp_gen.Finalize()); err != nil {
 				fmt.Println(fmt.Sprintf("SourceGo: unable to generate file '%s'.sp, %s", file), err)
 			}
 		}

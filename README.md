@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.2a
+v0.3a
 
 ## Introduction
 
@@ -19,6 +19,18 @@ Vec3   => float[3]
 Map    => StringMap
 Array  => ArrayList
 Obj    => Handle
+```
+
+* `#include <sourcemod>` and semicolon & new decls pragma are automatically added to each generated sourcepawn code file.
+
+* relative file imports are handled by using a dot `.` as the first letter
+```go
+import ".file"
+```
+
+Becomes:
+```c
+#include "file"
 ```
 
 ## Contributing
