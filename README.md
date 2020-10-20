@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.4a
+v0.5a
 
 ## Introduction
 
@@ -14,7 +14,9 @@ Here is the current types list and what it abstracts to:
 ```
 int    => int
 float  => float
-bool   => float
+bool   => bool
+int8   => char
+string => char[]
 Vec3   => float[3]
 Map    => StringMap
 Array  => ArrayList
@@ -32,6 +34,11 @@ Becomes:
 ```c
 #include "file"
 ```
+
+### Planned Features
+* Generate Natives and an include file for them.
+* Abstract, type-based syntax translation for higher data types like `StringMap` and `ArrayList`.
+* 
 
 ## Contributing
 

@@ -32,7 +32,9 @@ func IsValidClient(client int, replaycheck bool) bool {
 func GetOwner(ent int) int {
 	if IsValidEntity(ent) {
 		return GetEntPropEnt(ent, Prop_Send, "m_hOwnerEntity")
-	} else { return -1 }
+	} else {
+		return -1
+	}
 }
 
 func Func1(x, n int) int
