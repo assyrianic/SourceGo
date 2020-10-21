@@ -41,11 +41,11 @@ func main() {
 		} else {
 			fmt.Println(fmt.Sprintf("SourceGo: '%s' transpiled successfully as '%s.sp'", file, file))
 			sp_gen := ASTtoSP.SPGen{ SrcGoAST: f }
-			//sp_gen.PrintAST()
 			sp_gen.AnalyzeFile()
 			if err := WriteToFile(file + ".sp", sp_gen.Finalize()); err != nil {
 				fmt.Println(fmt.Sprintf("SourceGo: unable to generate file '%s'.sp, %s", file), err)
 			}
+			sp_gen.PrintAST()
 		}
 	}
 }

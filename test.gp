@@ -37,5 +37,16 @@ func GetOwner(ent int) int {
 	}
 }
 
-func Func1(x, n int) int
-func (n int) Receiver(c float)
+func Func1(x, n int) int {
+	switch x {
+		case 1, 2, 3, 4:
+			n &= 1
+			n &^ x << 5
+		case test:
+			n += test
+		default:
+			foo()
+	}
+}
+
+func (n int) Receiver(c float) Action
