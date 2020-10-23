@@ -41,7 +41,7 @@ func Func1(x, n int) int {
 	switch x {
 		case 1, 2, 3, 4:
 			n &= 1
-			n &^ x << 5
+			n &^ x+1 << 5
 		case test:
 			n += test
 		default:

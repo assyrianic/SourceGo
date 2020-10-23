@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.6a
+v0.7a
 
 ## Introduction
 
@@ -44,7 +44,9 @@ Becomes:
 and `*string` matches to `char[]`.
 array/slice types will be automatically const unless given by "pointer" like: `*[]type`
 
-so giving something like `[]int` will be `const int[]` while `*[]int` will be `int[]`.
+so giving something like `[]int` will be `const int[]` while `*[]int` will become `int[]`.
+
+* multiple return values are supported by transpiling them into variable references.
 
 
 ## Contributing

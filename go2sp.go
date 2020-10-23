@@ -26,7 +26,6 @@ import (
 )
 
 
-/// use '.gp' file ext and '.ginc'.
 func main() {
 	files := os.Args[1:]
 	for _, file := range files {
@@ -40,12 +39,12 @@ func main() {
 			}
 		} else {
 			fmt.Println(fmt.Sprintf("SourceGo: '%s' transpiled successfully as '%s.sp'", file, file))
-			sp_gen := ASTtoSP.SPGen{ SrcGoAST: f }
-			sp_gen.AnalyzeFile()
-			if err := WriteToFile(file + ".sp", sp_gen.Finalize()); err != nil {
-				fmt.Println(fmt.Sprintf("SourceGo: unable to generate file '%s'.sp, %s", file), err)
-			}
-			sp_gen.PrintAST()
+			AST2SP.AnalyzeFile(f)
+			//if err := WriteToFile(file + ".sp", sp_gen.Finalize()); err != nil {
+			//	fmt.Println(fmt.Sprintf("SourceGo: unable to generate file '%s'.sp, %s", file), err)
+			//}
+			AST2SP.PrintAST(f)
+			AST2SP.PrettyPrintAST(f)
 		}
 	}
 }
