@@ -22,24 +22,43 @@ import (
 	"go/token"
 	"go/scanner"
 	"go/parser"
+	"go/importer"
+	"go/types"
+	"go/ast"
 	"./ast_to_sp"
 )
-
 
 func main() {
 	files := os.Args[1:]
 	for _, file := range files {
+		fset := token.NewFileSet()
 		code, err1 := ioutil.ReadFile("./" + file)
 		CheckErr(err1)
-		fset := token.NewFileSet()
 		f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors)
 		if err2 != nil {
 			for _, e := range err2.(scanner.ErrorList) {
 				fmt.Println(e)
 			}
 		} else {
+			conf := types.Config{Importer: importer.Default()}
+			info := &types.Info{
+				Types:      make(map[ast.Expr]types.TypeAndValue), 
+				Defs:       make(map[*ast.Ident]types.Object),
+				Uses:       make(map[*ast.Ident]types.Object),
+				Implicits:  make(map[ast.Node]types.Object),
+				Scopes:     make(map[ast.Node]*types.Scope),
+				Selections: make(map[*ast.SelectorExpr]*types.Selection),
+			}
+			if _, err := conf.Check("main", fset, []*ast.File{f}, info); err != nil {
+				for _, e := range err.(scanner.ErrorList) {
+					fmt.Println(e)
+				} /// type error
+			}
+			fmt.Println(info, "\n\n")
+			fmt.Println(conf, "\n")
+			
 			fmt.Println(fmt.Sprintf("SourceGo: '%s' transpiled successfully as '%s.sp'", file, file))
-			AST2SP.AnalyzeFile(f)
+			AST2SP.AnalyzeFile(f, info)
 			//if err := WriteToFile(file + ".sp", sp_gen.Finalize()); err != nil {
 			//	fmt.Println(fmt.Sprintf("SourceGo: unable to generate file '%s'.sp, %s", file), err)
 			//}

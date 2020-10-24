@@ -16,13 +16,14 @@ package AST2SP
 
 import (
 	"fmt"
+	"bytes"
 	"go/token"
 	"go/ast"
-	//"go/types"   /// Golang's Type system.
-	"bytes"
+	"go/types"   /// Golang's Type system.
 	"go/format"
 )
 
+var type_info *types.Info
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	ptr := new(ast.StarExpr)
@@ -38,7 +39,7 @@ func Arrayify(typ ast.Expr) *ast.ArrayType {
 }
 
 func InsertExpr(a []ast.Expr, index int, value ast.Expr) []ast.Expr {
-	if len(a) == index { /// nil or empty slice or after last element
+	if len(a) <= index { /// nil or empty slice or after last element
 		return append(a, value)
 	}
 	a = append(a[:index+1], a[index:]...) /// index < len(a)
@@ -47,7 +48,7 @@ func InsertExpr(a []ast.Expr, index int, value ast.Expr) []ast.Expr {
 }
 
 func InsertStmt(a []ast.Stmt, index int, value ast.Stmt) []ast.Stmt {
-	if len(a) == index { /// nil or empty slice or after last element
+	if len(a) <= index { /// nil or empty slice or after last element
 		return append(a, value)
 	}
 	a = append(a[:index+1], a[index:]...) /// index < len(a)
@@ -55,8 +56,26 @@ func InsertStmt(a []ast.Stmt, index int, value ast.Stmt) []ast.Stmt {
 	return a
 }
 
+func FindExpr(a []ast.Expr, x ast.Expr) int {
+	for i, n := range a {
+		if x == n {
+			return i
+		}
+	}
+	return -1
+}
 
-func AnalyzeFile(f *ast.File) {
+func FindStmt(a []ast.Stmt, x ast.Stmt) int {
+	for i, n := range a {
+		if x == n {
+			return i
+		}
+	}
+	return -1
+}
+
+
+func AnalyzeFile(f *ast.File, info *types.Info) {
 	/*
 	type File struct {
 		Doc        *CommentGroup   // associated documentation; or nil
@@ -69,6 +88,7 @@ func AnalyzeFile(f *ast.File) {
 		Comments   []*CommentGroup // list of all comments in the source file
 	}
 	 */
+	type_info = info
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
@@ -98,7 +118,21 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 		switch spec.(type) {
 			case *ast.ImportSpec:
 			case *ast.ValueSpec:
+			/* ConstSpec or VarSpec production
+				Doc     *CommentGroup // associated documentation; or nil
+				Names   []*Ident      // value names (len(Names) > 0)
+				Type    Expr          // value type; or nil
+				Values  []Expr        // initial values; or nil
+				Comment *CommentGroup // line comments; or nil
+			 */
 			case *ast.TypeSpec:
+			/*
+				Doc     *CommentGroup // associated documentation; or nil
+				Name    *Ident        // type name
+				Assign  token.Pos     // position of '=', if any; added in Go 1.9
+				Type    Expr          // *Ident, *ParenExpr, *SelectorExpr, *StarExpr, or any of the *XxxTypes
+				Comment *CommentGroup // line comments; or nil
+			 */
 		}
 	}
 }
@@ -168,14 +202,41 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 		case *ast.AssignStmt:
 			/// TODO: make sure to check if len(rhs) <= len(lhs).
 			/// also check if rhs is function call expr.
-			same_len := len(n.Lhs)==len(n.Rhs)
-			if same_len {
-				/// same length, let's space it out into multiple assignments.
+			left_len := len(n.Lhs)
+			rite_len := len(n.Rhs)
+			same_len := left_len==rite_len
+			if !same_len && left_len > rite_len && rite_len==1 {
+				/// probably a func call returning multiple items.
 				switch n.Tok {
 					case token.DEFINE: /// TODO: break this down into decl + assigns
+						decl_stmt := new(ast.DeclStmt)
+						gen_decl := new(ast.GenDecl)
+						gen_decl.Tok = token.VAR
 						
-					case token.ASSIGN:
+						val_spec := new(ast.ValueSpec)
+						val_spec.Names = make([]*ast.Ident, 0)
+						for _, e := range n.Lhs {
+							n := e.(*ast.Ident)
+							val_spec.Names = append(val_spec.Names, n)
+							if type_of_expr := type_info.TypeOf(e); type_of_expr != nil {
+								type_expr := new(ast.Ident)
+								type_expr.Name = type_of_expr.String()
+								val_spec.Type = type_expr
+							} else {
+								panic("SourceGo: failed to space out assignments.")
+							}
+						}
+						//Values  []Expr        // initial values; or nil
 						
+						gen_decl.Specs = []ast.Spec{val_spec}
+						decl_stmt.Decl = gen_decl
+						owner_block.List = InsertStmt(owner_block.List, FindStmt(owner_block.List, s), decl_stmt)
+						n.Tok = token.ASSIGN
+						AnalyzeBlockStmt(owner_block)
+					case token.ASSIGN: /// transform the tuple return into a single return + pass by ref.
+						for i:=1; i<left_len; i++ {
+							
+						}
 				}
 			}
 			for _, e := range n.Lhs {
@@ -219,7 +280,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			
 		case *ast.IfStmt:
 			/// assumes tabs have been written to string builder.
-			if n.Init != nil { /// initialization statement; or nil
+			if n.Init != nil {
 				ManageStmtNode(owner_block, n.Init)
 			}
 			ManageExprNode(owner_block, n.Cond)
@@ -308,6 +369,7 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 			ManageExprNode(owner_block, x.X)
 		
 		case *ast.StarExpr:
+			/// in an ordinary block, we ignore the dereference since it'll become a reference.
 			ManageExprNode(owner_block, x.X)
 		
 		case *ast.UnaryExpr:
@@ -368,7 +430,7 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 func PrintAST(f *ast.File) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n != nil {
-			fmt.Println(fmt.Sprintf("%T:\t\t", n), n)
+			fmt.Println(fmt.Sprintf("%p - %T:\t\t", n, n), n)
 		}
 		return true
 	})
