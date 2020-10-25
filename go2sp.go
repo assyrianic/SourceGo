@@ -34,28 +34,26 @@ func main() {
 		fset := token.NewFileSet()
 		code, err1 := ioutil.ReadFile("./" + file)
 		CheckErr(err1)
-		f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors)
+		f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors /*| parser.ParseComments*/)
 		if err2 != nil {
 			for _, e := range err2.(scanner.ErrorList) {
 				fmt.Println(e)
 			}
 		} else {
-			conf := types.Config{Importer: importer.Default()}
+			AST2SP.AddSourceGoTypes(f)
+			var typeErrors []error
+			conf := types.Config{Importer: importer.Default(), Error: func(err error) {
+				typeErrors = append(typeErrors, err)
+			}}
 			info := &types.Info{
 				Types:      make(map[ast.Expr]types.TypeAndValue), 
 				Defs:       make(map[*ast.Ident]types.Object),
-				Uses:       make(map[*ast.Ident]types.Object),
-				Implicits:  make(map[ast.Node]types.Object),
-				Scopes:     make(map[ast.Node]*types.Scope),
-				Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			}
-			if _, err := conf.Check("main", fset, []*ast.File{f}, info); err != nil {
-				for _, e := range err.(scanner.ErrorList) {
-					fmt.Println(e)
-				} /// type error
+			if _, err := conf.Check("", fset, []*ast.File{f}, info); err != nil {
+				for _, e := range typeErrors {
+					fmt.Println(e) /// type error
+				}
 			}
-			fmt.Println(info, "\n\n")
-			fmt.Println(conf, "\n")
 			
 			fmt.Println(fmt.Sprintf("SourceGo: '%s' transpiled successfully as '%s.sp'", file, file))
 			AST2SP.AnalyzeFile(f, info)

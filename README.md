@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.8a
+v0.9a
 
 ## Introduction
 
@@ -45,7 +45,12 @@ array/slice types will be automatically const unless given by "pointer" like: `*
 
 so giving something like `[]int` will be `const int[]` while `*[]int` will become `int[]`.
 
-* multiple return values are supported by transpiling them into variable references.
+* Multiple return values are supported by transpiling them into variable references.
+* Abstract function pointers.
+* Abstraction anonymous functions. (perfect for abstracting timers)
+
+### Goal
+Generate SourcePawn source code that is compileable by `spcomp` without having to modify/assist the generate source code.
 
 
 ## Contributing

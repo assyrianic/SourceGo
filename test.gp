@@ -1,31 +1,27 @@
 package main
 
-/*
-import (
-	//"sourcemod" /// will be automatically inserted.
-	"tf2_stocks"
-	"sdkhooks"
-	"arraylist"
-	".Impacts_suggestion"
-)
-*/
+import "sourcemod"
 
-func f() (int, int, int)
-
-func Func1(x, n int, p *int8) int {
-	/*
-	switch x {
-		case 1, 2, 3, 4:
-			n &= 1
-			n &^ x+1 << 5
-		case test:
-			n += test
-		default:
-			foo()
-	}
-	*/
-	a, b, c := f()   /// transform into `var a,b,c type; a = f(&b, &c)`
-	return a + b + c
+/** Golang struct, limitations:
+ *  No pointers, empty array brackets.
+ */
+type EStruct struct {
+	Clients [35]int
+	FPtr    func()int
 }
 
-//func (n int) Receiver(c float) Action
+func h() (int, int, float)
+func f() (int, int, float) /// => func f(*int, *float32) int
+
+func b(x, n int, p *int) int {
+	a, b, c := f()
+	a, b, c = h()
+	return a + b + int(c)
+}
+
+func mul_return() (SM.Action, SM.StrMap, Handle) {
+	return SM.Plugin_Continue, make(SM.StrMap), Handle(-1)
+}
+
+func kek() {
+}

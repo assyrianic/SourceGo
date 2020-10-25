@@ -23,6 +23,7 @@ import (
 	"go/format"
 )
 
+
 var type_info *types.Info
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
@@ -31,9 +32,9 @@ func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	return ptr
 }
 
-func Arrayify(typ ast.Expr) *ast.ArrayType {
+func Arrayify(typ ast.Expr, len ast.Expr) *ast.ArrayType {
 	a := new(ast.ArrayType)
-	a.Len = nil
+	a.Len = len
 	a.Elt = typ
 	return a
 }
@@ -48,6 +49,15 @@ func InsertExpr(a []ast.Expr, index int, value ast.Expr) []ast.Expr {
 }
 
 func InsertStmt(a []ast.Stmt, index int, value ast.Stmt) []ast.Stmt {
+	if len(a) <= index { /// nil or empty slice or after last element
+		return append(a, value)
+	}
+	a = append(a[:index+1], a[index:]...) /// index < len(a)
+	a[index] = value
+	return a
+}
+
+func InsertDecl(a []ast.Decl, index int, value ast.Decl) []ast.Decl {
 	if len(a) <= index { /// nil or empty slice or after last element
 		return append(a, value)
 	}
@@ -74,25 +84,40 @@ func FindStmt(a []ast.Stmt, x ast.Stmt) int {
 	return -1
 }
 
+func AddType(t []ast.Spec, name string, typ ast.Expr) []ast.Spec {
+	new_type := new(ast.TypeSpec)
+	new_type.Name = ast.NewIdent(name)
+	new_type.Type = typ
+	return append(t, new_type)
+}
+
+func AddSourceGoTypes(f *ast.File) {
+	int_type := ast.NewIdent("int")
+	flt_type := ast.NewIdent("float32")
+	
+	vec_len := new(ast.BasicLit)
+	vec_len.Kind = token.INT
+	vec_len.Value = "3"
+	vec3_type := Arrayify(ast.NewIdent("float"), vec_len)
+	
+	new_gdecl := new(ast.GenDecl)
+	new_gdecl.Tok = token.TYPE
+	new_gdecl.Specs = AddType(new_gdecl.Specs, "char", ast.NewIdent("int8"))
+	new_gdecl.Specs = AddType(new_gdecl.Specs, "float", flt_type)
+	new_gdecl.Specs = AddType(new_gdecl.Specs, "Handle", int_type)
+	new_gdecl.Specs = AddType(new_gdecl.Specs, "Entity", int_type)
+	new_gdecl.Specs = AddType(new_gdecl.Specs, "Vec3", vec3_type)
+	f.Decls = InsertDecl(f.Decls, 0, new_gdecl)
+}
+
 
 func AnalyzeFile(f *ast.File, info *types.Info) {
-	/*
-	type File struct {
-		Doc        *CommentGroup   // associated documentation; or nil
-		Package    token.Pos       // position of "package" keyword
-		Name       *Ident          // package name
-		Decls      []Decl          // top-level declarations; or nil
-		Scope      *Scope          // package scope (this file only)
-		Imports    []*ImportSpec   // imports in this file
-		Unresolved []*Ident        // unresolved identifiers in this file
-		Comments   []*CommentGroup // list of all comments in the source file
-	}
-	 */
 	type_info = info
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
 }
+
 
 /** Top Level of the Grammar
  * There's 4 types of nodes in Golang and their hierarchy:
@@ -115,24 +140,33 @@ func ManageDeclNode(d ast.Decl) {
 /// Generic Declaration Node
 func AnalyzeGenDecl(g *ast.GenDecl) {
 	for _, spec := range g.Specs {
-		switch spec.(type) {
+		switch s := spec.(type) {
 			case *ast.ImportSpec:
 			case *ast.ValueSpec:
-			/* ConstSpec or VarSpec production
-				Doc     *CommentGroup // associated documentation; or nil
-				Names   []*Ident      // value names (len(Names) > 0)
-				Type    Expr          // value type; or nil
-				Values  []Expr        // initial values; or nil
-				Comment *CommentGroup // line comments; or nil
-			 */
+				for _, n := range s.Names {
+					ManageExprNode(nil, n)
+				}
+				ManageExprNode(nil, s.Type)
+				for _, e := range s.Values {
+					ManageExprNode(nil, e)
+				}
 			case *ast.TypeSpec:
-			/*
-				Doc     *CommentGroup // associated documentation; or nil
-				Name    *Ident        // type name
-				Assign  token.Pos     // position of '=', if any; added in Go 1.9
-				Type    Expr          // *Ident, *ParenExpr, *SelectorExpr, *StarExpr, or any of the *XxxTypes
-				Comment *CommentGroup // line comments; or nil
-			 */
+				ManageExprNode(nil, s.Name)
+				/// make sure struct fields are not pointers or slices.
+				if struc, is_struct := s.Type.(*ast.StructType); is_struct {
+					if !struc.Incomplete {
+						for _, f := range struc.Fields.List {
+							switch t := f.Type.(type) {
+								case *ast.StarExpr:
+									panic("SourceGo: you can't have pointers in structs.")
+								case *ast.ArrayType:
+									if t.Len==nil {
+										panic("SourceGo: you can't have slices in structs.")
+									}
+							}
+						}
+					}
+				}
 		}
 	}
 }
@@ -161,33 +195,27 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 			}
 		}
 		
-		/// func f() (int, float) {} => func f(_1 *float) int {}
+		/// func f() (int, float) {} => func f(_param1 *float) int {}
 		results := len(f.Type.Results.List)
 		if results > 1 {
-			for i:=results-1; i>=0; i-- {
+			/// TODO: group together moved var names under their same type if possible.
+			for i:=1; i<results; i++ {
 				ret := f.Type.Results.List[i]
 				/// if they're named, treat as reference types.
 				if ret.Names != nil && len(ret.Names) > 1 {
 					ret.Type = PtrizeExpr(ret.Type)
 					new_params = append(new_params, ret)
-					copy(f.Type.Results.List[i:], f.Type.Results.List[i+1:])
-					f.Type.Results.List = f.Type.Results.List[:len(f.Type.Results.List)-1]
-				} else if i != 0 {
-					ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("_%d", results - i)))
+				} else {
+					ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("srcgo_param%d", i)))
 					ret.Type = PtrizeExpr(ret.Type)
 					new_params = append(new_params, ret)
-					copy(f.Type.Results.List[i:], f.Type.Results.List[i+1:])
-					f.Type.Results.List = f.Type.Results.List[:len(f.Type.Results.List)-1]
 				}
 			}
+			f.Type.Results.List = f.Type.Results.List[:1]
 		} else if results==1 && f.Type.Results.List[0].Names != nil && len(f.Type.Results.List[0].Names) > 1 {
-			/// TODO: analyze if the return values are all the same type and group it to return an array EXCEPT if the function is a native...
-			//arr := Arrayify(f.Type.Results.List[0].Type)
-			//f.Type.Results.List[0].Type = arr
 			f.Type.Results.List[0].Type = PtrizeExpr(f.Type.Results.List[0].Type)
 			new_params = append(new_params, f.Type.Results.List[0])
 			f.Type.Results.List = nil
-			//f.Type.Results.List[0].Names = nil
 		}
 	}
 	f.Type.Params.List = new_params
@@ -205,6 +233,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			left_len := len(n.Lhs)
 			rite_len := len(n.Rhs)
 			same_len := left_len==rite_len
+			
 			if !same_len && left_len > rite_len && rite_len==1 {
 				/// probably a func call returning multiple items.
 				switch n.Tok {
@@ -213,29 +242,44 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 						gen_decl := new(ast.GenDecl)
 						gen_decl.Tok = token.VAR
 						
-						val_spec := new(ast.ValueSpec)
-						val_spec.Names = make([]*ast.Ident, 0)
+						/// first we get each name of a var and then map them to a type.
+						var_map := make(map[types.Type][]ast.Expr)
 						for _, e := range n.Lhs {
-							n := e.(*ast.Ident)
-							val_spec.Names = append(val_spec.Names, n)
-							if type_of_expr := type_info.TypeOf(e); type_of_expr != nil {
-								type_expr := new(ast.Ident)
-								type_expr.Name = type_of_expr.String()
-								val_spec.Type = type_expr
+							if type_expr := type_info.TypeOf(e); type_expr != nil {
+								var_map[type_expr] = append(var_map[type_expr], e)
 							} else {
 								panic("SourceGo: failed to space out assignments.")
 							}
 						}
-						//Values  []Expr        // initial values; or nil
 						
-						gen_decl.Specs = []ast.Spec{val_spec}
+						for key, val := range var_map {
+							val_spec := new(ast.ValueSpec)
+							for _, name := range val {
+								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
+							}
+							type_expr := new(ast.Ident)
+							type_expr.Name = key.String()
+							val_spec.Type = type_expr
+							gen_decl.Specs = append(gen_decl.Specs, val_spec)
+						}
+						
 						decl_stmt.Decl = gen_decl
 						owner_block.List = InsertStmt(owner_block.List, FindStmt(owner_block.List, s), decl_stmt)
 						n.Tok = token.ASSIGN
 						AnalyzeBlockStmt(owner_block)
+					
 					case token.ASSIGN: /// transform the tuple return into a single return + pass by ref.
-						for i:=1; i<left_len; i++ {
-							
+						if funct, is_func_call := n.Rhs[0].(*ast.CallExpr); is_func_call {
+							for i:=1; i<left_len; i++ {
+								switch e := n.Lhs[i].(type) {
+									case *ast.Ident:
+										uexpr := new(ast.UnaryExpr)
+										uexpr.X = e
+										uexpr.Op = token.AND
+										funct.Args = append(funct.Args, uexpr)
+								}
+							}
+							n.Lhs = n.Lhs[:1]
 						}
 				}
 			}
@@ -245,6 +289,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			for _, e := range n.Rhs {
 				ManageExprNode(owner_block, e)
 			}
+			//Values  []Expr        // initial values; or nil
 		
 		case *ast.BlockStmt:
 			AnalyzeBlockStmt(n)
@@ -293,10 +338,21 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			ManageExprNode(owner_block, n.X)
 			
 		case *ast.ReturnStmt:
-			for _, result := range n.Results {
-				/// change multiple var returns into passing by reference.
-				ManageExprNode(owner_block, result)
+			/// change multiple var returns into passing by reference.
+			index := FindStmt(owner_block.List, s)
+			res_len := len(n.Results)
+			for i:=1; i<res_len; i++ {
+				ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("srcgo_param%d", i)))
+				assign := new(ast.AssignStmt)
+				assign.Lhs = append(assign.Lhs, ptr_deref)
+				assign.Tok = token.ASSIGN
+				assign.Rhs = append(assign.Rhs, n.Results[i])
+				owner_block.List = InsertStmt(owner_block.List, index, assign)
+				index++
 			}
+			n.Results = n.Results[:1]
+			fmt.Println("n.Results len", len(n.Results))
+			//AnalyzeBlockStmt(owner_block) /// reanalyze
 		
 		case *ast.SwitchStmt:
 			ManageStmtNode(owner_block, n.Init)
@@ -358,10 +414,6 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 			ManageExprNode(owner_block, x.Index)
 		
 		case *ast.KeyValueExpr:
-			/// change map access to GetTrieValue calls.
-			/// func GetTrieValue(map Handle, key string, value *any) bool
-			/// value, exists := map[key] => if( GetTrieValue(map, key, value) )...
-			/// value = map[key] => GetTrieValue(map, key, value);
 			ManageExprNode(owner_block, x.Key)
 			ManageExprNode(owner_block, x.Value)
 		
@@ -381,7 +433,7 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 				ManageExprNode(owner_block, arg)
 			}
 		
-		case *ast.BinaryExpr:
+		case *ast.BinaryExpr: /// a op b
 			/// a &^ b ==> a & ^(b) ==> a & ~(b) in sp.
 			if x.Op==token.AND_NOT {
 				x.Op = token.AND
@@ -434,6 +486,7 @@ func PrintAST(f *ast.File) {
 		}
 		return true
 	})
+	fmt.Println("\n")
 }
 
 func PrettyPrintAST(f *ast.File) {
