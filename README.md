@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.9a
+v0.10a
 
 ## Introduction
 
@@ -23,6 +23,8 @@ Array  => ArrayList
 ```
 
 * `#include <sourcemod>` and semicolon & new decls pragma are automatically added to each generated sourcepawn code file.
+
+* Sourcemod-based constants, functions, and types are automatically added as part of the universal Go scope.
 
 * relative file imports are handled by using a dot `.` as the first letter
 ```go
