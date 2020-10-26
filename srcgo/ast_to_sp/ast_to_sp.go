@@ -64,7 +64,7 @@ type CodeFunc struct {
 	Header string
 }
 
-func GenSPFile(f *ast.File) string {
+func GenSPFile(f *ast.File, info *types.Info) string {
 	var c = CodeGen{}
 	c.Includes.WriteString("#include <sourcemod>\n")
 	for _, d := range f.Decls {
