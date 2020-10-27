@@ -27,7 +27,10 @@ import (
 )
 
 
-var type_info *types.Info
+var (
+	SrcGoTypeInfo *types.Info
+)
+
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	ptr := new(ast.StarExpr)
@@ -120,16 +123,16 @@ func AddSrcGoTypes() {
 	types.Universe.Insert(strmap)
 	
 	/// defined constants.
-	maxclients := types.NewVar(token.NoPos, nil, "MaxClients", types.Typ[types.Int])
-	types.Universe.Insert(maxclients)
+	types.Universe.Insert(types.NewVar(token.NoPos, nil, "MaxClients", types.Typ[types.Int]))
 	
-	MAXPLAYERS := types.NewConst(token.NoPos, nil, "MAXPLAYERS", types.Typ[types.Int], constant.MakeInt64(65))
-	types.Universe.Insert(MAXPLAYERS)
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "MAXPLAYERS", types.Typ[types.Int], constant.MakeInt64(65)))
+	
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "MAXENTS", types.Typ[types.Int], constant.MakeInt64(2048)))
 }
 
 
 func AnalyzeFile(f *ast.File, info *types.Info) {
-	type_info = info
+	SrcGoTypeInfo = info
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
@@ -198,7 +201,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 		} else {
 			/// merge receiver with the params and nullify it.
 			new_params = append(new_params, f.Recv.List[0])
-			if type_expr := type_info.TypeOf(f.Recv.List[0].Type); type_expr != nil {
+			if type_expr := SrcGoTypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
 				type_name := type_expr.String()
 				type_name = strings.Replace(type_name, ".", "_", -1)
 				type_name = strings.Replace(type_name, " ", "_", -1)
@@ -273,7 +276,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 						/// first we get each name of a var and then map them to a type.
 						var_map := make(map[types.Type][]ast.Expr)
 						for _, e := range n.Lhs {
-							if type_expr := type_info.TypeOf(e); type_expr != nil {
+							if type_expr := SrcGoTypeInfo.TypeOf(e); type_expr != nil {
 								var_map[type_expr] = append(var_map[type_expr], e)
 							} else {
 								panic("SourceGo: failed to space out assignments.")
@@ -352,7 +355,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			AnalyzeBlockStmt(n.Body)
 			
 		case *ast.IfStmt:
-			/// assumes tabs have been written to string builder.
+			/// TODO: have initializer stmt prior to the if stmt.
 			if n.Init != nil {
 				ManageStmtNode(owner_block, n.Init)
 			}

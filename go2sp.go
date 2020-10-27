@@ -70,7 +70,7 @@ func main() {
 			SrcGo_ASTMod.PrintAST(f)
 			SrcGo_ASTMod.AnalyzeFile(f, info)
 			SrcGo_ASTMod.PrettyPrintAST(f)
-			final_code := SrcGoSPGen.GenSPFile(f, info)
+			final_code := SrcGoSPGen.GenSPFile(f)
 			WriteToFile(file + ".sp", final_code)
 		}
 		

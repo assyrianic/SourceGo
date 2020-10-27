@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.10a
+v0.12a
 
 ## Introduction
 
@@ -17,7 +17,7 @@ float  => float
 bool   => bool
 int8   => char
 string => char[]
-Vec3   => float[3]
+Vec3, QAngle => float[3]
 Map    => StringMap
 Array  => ArrayList
 ```
