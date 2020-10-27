@@ -110,6 +110,7 @@ func AddSrcGoTypes() {
 	types.Universe.Insert(vec3_type_name)
 	
 	/// TODO: define methods for the Handle types, Vec3, and Entity.
+	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
 	handle_type_name := types.NewTypeName(token.NoPos, nil, "Handle", nil)
 	handle_type := types.NewNamed(handle_type_name, types.Typ[types.Int], nil)
 	types.Universe.Insert(handle_type_name)
@@ -264,36 +265,36 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			if rite_len==1 && left_len >= rite_len && is_func_call {
 				/// a func call returning multiple items.
 				switch n.Tok {
-					case token.DEFINE: /// TODO: break this down into decl + assigns
-					decl_stmt := new(ast.DeclStmt)
-					gen_decl := new(ast.GenDecl)
-					gen_decl.Tok = token.VAR
-					
-					/// first we get each name of a var and then map them to a type.
-					var_map := make(map[types.Type][]ast.Expr)
-					for _, e := range n.Lhs {
-						if type_expr := type_info.TypeOf(e); type_expr != nil {
-							var_map[type_expr] = append(var_map[type_expr], e)
-						} else {
-							panic("SourceGo: failed to space out assignments.")
+					case token.DEFINE:
+						decl_stmt := new(ast.DeclStmt)
+						gen_decl := new(ast.GenDecl)
+						gen_decl.Tok = token.VAR
+						
+						/// first we get each name of a var and then map them to a type.
+						var_map := make(map[types.Type][]ast.Expr)
+						for _, e := range n.Lhs {
+							if type_expr := type_info.TypeOf(e); type_expr != nil {
+								var_map[type_expr] = append(var_map[type_expr], e)
+							} else {
+								panic("SourceGo: failed to space out assignments.")
+							}
 						}
-					}
-					
-					for key, val := range var_map {
-						val_spec := new(ast.ValueSpec)
-						for _, name := range val {
-							val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
+						
+						for key, val := range var_map {
+							val_spec := new(ast.ValueSpec)
+							for _, name := range val {
+								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
+							}
+							type_expr := new(ast.Ident)
+							type_expr.Name = key.String()
+							val_spec.Type = type_expr
+							gen_decl.Specs = append(gen_decl.Specs, val_spec)
 						}
-						type_expr := new(ast.Ident)
-						type_expr.Name = key.String()
-						val_spec.Type = type_expr
-						gen_decl.Specs = append(gen_decl.Specs, val_spec)
-					}
-					
-					decl_stmt.Decl = gen_decl
-					owner_block.List = InsertStmt(owner_block.List, FindStmt(owner_block.List, s), decl_stmt)
-					n.Tok = token.ASSIGN
-					AnalyzeBlockStmt(owner_block)
+						
+						decl_stmt.Decl = gen_decl
+						owner_block.List = InsertStmt(owner_block.List, FindStmt(owner_block.List, s), decl_stmt)
+						n.Tok = token.ASSIGN
+						AnalyzeBlockStmt(owner_block)
 					
 					case token.ASSIGN: /// transform the tuple return into a single return + pass by ref.
 						if is_func_call {

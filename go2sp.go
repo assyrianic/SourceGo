@@ -67,9 +67,11 @@ func main() {
 				}
 				no_compile = true
 			}
-			//SrcGo_ASTMod.PrintAST(f)
+			SrcGo_ASTMod.PrintAST(f)
 			SrcGo_ASTMod.AnalyzeFile(f, info)
 			SrcGo_ASTMod.PrettyPrintAST(f)
+			final_code := SrcGoSPGen.GenSPFile(f, info)
+			WriteToFile(file + ".sp", final_code)
 		}
 		
 		if no_compile {
@@ -77,9 +79,6 @@ func main() {
 		} else {
 			fmt.Println(fmt.Sprintf("SourceGo: successfully transpiled '%s.sp'.", file))
 		}
-		
-		final_code := SrcGoSPGen.GenSPFile(f)
-		WriteToFile(file + ".sp", final_code)
 	}
 }
 
