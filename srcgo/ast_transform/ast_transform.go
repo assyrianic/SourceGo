@@ -115,7 +115,7 @@ func AddSrcGoTypes() {
 	/// TODO: define methods for the Handle types, Vec3, and Entity.
 	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
 	handle_type_name := types.NewTypeName(token.NoPos, nil, "Handle", nil)
-	handle_type := types.NewNamed(handle_type_name, types.Typ[types.Int], nil)
+	handle_type := types.NewNamed(handle_type_name, types.Typ[types.UnsafePointer], nil)
 	types.Universe.Insert(handle_type_name)
 	
 	strmap := types.NewTypeName(token.NoPos, nil, "Map", handle_type)
