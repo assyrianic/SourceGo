@@ -9,8 +9,20 @@ const (
 	f = 1.00
 )
 
-type PlayerList [MAXPLAYERS]Entity
+type Name [64]char
+type Color = [4]int
 
-type EStruct struct {
-	Clients PlayerList
+
+type (
+	Point struct{ x, y float }
+	Points struct { p [3]Point }
+	polar [3]Points
+)
+
+type PlayerInfo struct {
+	K polar
+}
+
+func main() {
+	
 }

@@ -67,6 +67,7 @@ func main() {
 				}
 				no_compile = true
 			}
+			SrcGo_ASTMod.ASTCtxt.FSet = fset
 			SrcGo_ASTMod.PrintAST(f)
 			SrcGo_ASTMod.AnalyzeFile(f, info)
 			SrcGo_ASTMod.PrettyPrintAST(f)

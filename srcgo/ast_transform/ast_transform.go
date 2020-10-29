@@ -28,7 +28,11 @@ import (
 
 
 var (
-	SrcGoTypeInfo *types.Info
+	ASTCtxt struct {
+		SrcGoTypeInfo *types.Info
+		CurrFunc      *ast.FuncDecl
+		FSet          *token.FileSet
+	}
 )
 
 
@@ -90,6 +94,10 @@ func FindStmt(a []ast.Stmt, x ast.Stmt) int {
 	return -1
 }
 
+func PrintSrcGoErr(p token.Pos, msg string) {
+	fmt.Println("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg)
+}
+
 
 func AddSrcGoTypes() {
 	/**
@@ -132,7 +140,7 @@ func AddSrcGoTypes() {
 
 
 func AnalyzeFile(f *ast.File, info *types.Info) {
-	SrcGoTypeInfo = info
+	ASTCtxt.SrcGoTypeInfo = info
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
@@ -173,16 +181,17 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 			
 			case *ast.TypeSpec:
 				ManageExprNode(nil, s.Name)
+				s.Assign = -1
 				/// make sure struct fields are not pointers or slices.
 				if struc, is_struct := s.Type.(*ast.StructType); is_struct {
 					if !struc.Incomplete {
 						for _, f := range struc.Fields.List {
 							switch t := f.Type.(type) {
 								case *ast.StarExpr:
-									panic("SourceGo: you can't have pointers in structs.")
+									PrintSrcGoErr(t.Pos(), "Pointers are not allowed in Structs.")
 								case *ast.ArrayType:
 									if t.Len==nil {
-										panic("SourceGo: you can't have slices in structs.")
+										PrintSrcGoErr(t.Pos(), "Slices are not allowed in Structs.")
 									}
 							}
 						}
@@ -194,14 +203,15 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 
 
 func AnalyzeFuncDecl(f *ast.FuncDecl) {
+	ASTCtxt.CurrFunc = f
 	new_params := make([]*ast.Field, 0)
 	if f.Recv != nil {
 		if len(f.Recv.List) > 1 {
-			panic("SourceGo: You can't have multiple receivers.")
+			PrintSrcGoErr(f.Pos(), "Multiple Receiver Params are not allowed in Functions.")
 		} else {
 			/// merge receiver with the params and nullify it.
 			new_params = append(new_params, f.Recv.List[0])
-			if type_expr := SrcGoTypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
+			if type_expr := ASTCtxt.SrcGoTypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
 				type_name := type_expr.String()
 				type_name = strings.Replace(type_name, ".", "_", -1)
 				type_name = strings.Replace(type_name, " ", "_", -1)
@@ -221,8 +231,8 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 	
 	if f.Type.Results != nil {
 		for _, ret := range f.Type.Results.List {
-			if _, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
-				panic("SourceGo: You can't return pointers.")
+			if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+				PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
 			}
 		}
 		
@@ -237,7 +247,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 					ret.Type = PtrizeExpr(ret.Type)
 					new_params = append(new_params, ret)
 				} else {
-					ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("srcgo_param%d", i)))
+					ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("%s_param%d", f.Name.Name, i)))
 					ret.Type = PtrizeExpr(ret.Type)
 					new_params = append(new_params, ret)
 				}
@@ -254,6 +264,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 	if f.Body != nil {
 		AnalyzeBlockStmt(f.Body);
 	}
+	ASTCtxt.CurrFunc = nil
 }
 
 func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
@@ -276,10 +287,10 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 						/// first we get each name of a var and then map them to a type.
 						var_map := make(map[types.Type][]ast.Expr)
 						for _, e := range n.Lhs {
-							if type_expr := SrcGoTypeInfo.TypeOf(e); type_expr != nil {
+							if type_expr := ASTCtxt.SrcGoTypeInfo.TypeOf(e); type_expr != nil {
 								var_map[type_expr] = append(var_map[type_expr], e)
 							} else {
-								panic("SourceGo: failed to space out assignments.")
+								PrintSrcGoErr(n.TokPos, "Failed to expand assignments.")
 							}
 						}
 						
@@ -327,9 +338,9 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 		
 		case *ast.BranchStmt:
 			if n.Tok==token.GOTO || n.Tok==token.FALLTHROUGH {
-				panic("SourceGo: " + fmt.Sprintf("%s is illegal.", n.Tok.String()))
+				PrintSrcGoErr(n.Pos(), fmt.Sprintf(" %s is Illegal.", n.Tok.String()))
 			} else if n.Label != nil {
-				panic("SourceGo: Branched Labels are illegal.")
+				PrintSrcGoErr(n.Pos(), "Branched Labels are Illegal.")
 			}
 		
 		case *ast.DeclStmt:
@@ -373,7 +384,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			index := FindStmt(owner_block.List, s)
 			res_len := len(n.Results)
 			for i:=1; i<res_len; i++ {
-				ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("srcgo_param%d", i)))
+				ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i)))
 				assign := new(ast.AssignStmt)
 				assign.Lhs = append(assign.Lhs, ptr_deref)
 				assign.Tok = token.ASSIGN
@@ -414,21 +425,21 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			}
 		
 		case *ast.CommClause:
-			panic("SourceGo: Comm Select Cases are illegal.")
+			PrintSrcGoErr(n.Pos(), "Comm Select Cases are Illegal.")
 		case *ast.RangeStmt: /// TODO: allow ranges for fixed-sized arrays?
-			panic("SourceGo: Ranges are illegal.")
+			PrintSrcGoErr(n.Pos(), "Ranges are Illegal.")
 		case *ast.DeferStmt:
-			panic("SourceGo: Defer Statements are illegal.")
+			PrintSrcGoErr(n.Pos(), "Defer Statements are Illegal.")
 		case *ast.TypeSwitchStmt:
-			panic("SourceGo: Type Switches are illegal.")
+			PrintSrcGoErr(n.Pos(), "Type-Switches are Illegal.")
 		case *ast.LabeledStmt:
-			panic("SourceGo: Labels are illegal.")
+			PrintSrcGoErr(n.Pos(), "Labels are Illegal.")
 		case *ast.GoStmt:
-			panic("SourceGo: Goroutines are illegal.")
+			PrintSrcGoErr(n.Pos(), "Goroutines are Illegal.")
 		case *ast.SelectStmt:
-			panic("SourceGo: Select is illegal.")
+			PrintSrcGoErr(n.Pos(), "Select Statements are Illegal.")
 		case *ast.SendStmt:
-			panic("SourceGo: Send is illegal.")
+			PrintSrcGoErr(n.Pos(), "Send Statements are Illegal.")
 	}
 }
 
@@ -505,14 +516,15 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 		
 		case *ast.BasicLit:
 			if x.Kind==token.IMAG {
-				panic("SourceGo: Imaginary numbers are illegal.")
+				PrintSrcGoErr(x.Pos(), "Imaginary Numbers are Illegal.")
 			}
 		
+		/// TODO: make as 'view_as< type >(expr)' ?
 		case *ast.TypeAssertExpr:
-			panic("SourceGo: Type Assertions are illegal.")
+			PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
 		case *ast.SliceExpr:
 			/// TODO: make new, local array when slicing?
-			panic("SourceGo: Slice Expressions are illegal.")
+			PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
 	}
 }
 
