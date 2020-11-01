@@ -32,9 +32,9 @@ var (
 		SrcGoTypeInfo *types.Info
 		CurrFunc      *ast.FuncDecl
 		FSet          *token.FileSet
+		BuiltnTypes   map[string]types.Object
 	}
 )
-
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	ptr := new(ast.StarExpr)
@@ -98,6 +98,45 @@ func PrintSrcGoErr(p token.Pos, msg string) {
 	fmt.Println("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg)
 }
 
+func CheckReturnTypes(n ast.Node) bool {
+	switch f := n.(type) {
+		case *ast.FuncDecl:
+			if f.Type.Results != nil {
+				for _, ret := range f.Type.Results.List {
+					if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+						PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
+						return false
+					}
+				}
+			}
+		case *ast.FuncType:
+			if f.Results != nil {
+				for _, ret := range f.Results.List {
+					if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+						PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
+						return false
+					}
+				}
+			}
+	}
+	return true
+}
+
+func MakeTypeAlias(name string, typ types.Type, strong bool) {
+	alias := types.NewTypeName(token.NoPos, nil, name, typ)
+	if strong {
+		ASTCtxt.BuiltnTypes[name] = alias
+	}
+	types.Universe.Insert(alias)
+}
+
+func MakeNamedType(name string, typ types.Type, methods []*types.Func) {
+	alias := types.NewTypeName(token.NoPos, nil, name, nil)
+	types.NewNamed(alias, typ, methods)
+	types.Universe.Insert(alias)
+	ASTCtxt.BuiltnTypes[name] = alias
+}
+
 
 func AddSrcGoTypes() {
 	/**
@@ -111,24 +150,24 @@ func AddSrcGoTypes() {
 	 * 
 	 * NewNamed returns a new named type for the given type name, underlying type, and associated methods. If the given type name obj doesn't have a type yet, its type is set to the returned named type. The underlying type must not be a *Named
 	 */
-	types.Universe.Insert(types.NewTypeName(token.NoPos, nil, "Action", types.Typ[types.Int]))
-	types.Universe.Insert(types.NewTypeName(token.NoPos, nil, "char", types.Typ[types.Int8]))
-	types.Universe.Insert(types.NewTypeName(token.NoPos, nil, "Entity", types.Typ[types.Int]))
-	types.Universe.Insert(types.NewTypeName(token.NoPos, nil, "float", types.Typ[types.Float32]))
+	ASTCtxt.BuiltnTypes = make(map[string]types.Object)
+	
+	MakeTypeAlias("char", types.Typ[types.Int8], true)
+	MakeTypeAlias("Entity", types.Typ[types.Int], true)
+	MakeTypeAlias("float", types.Typ[types.Float32], false)
 	
 	vec3_array := types.NewArray(types.Typ[types.Float32], 3)
 	vec3_type_name := types.NewTypeName(token.NoPos, nil, "Vec3", vec3_array)
 	types.Universe.Insert(vec3_type_name)
 	
+	MakeNamedType("Action", types.Typ[types.Int], nil)
+	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Map", types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Array", types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Event", types.Typ[types.UnsafePointer], nil)
+	
 	/// TODO: define methods for the Handle types, Vec3, and Entity.
 	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
-	handle_type_name := types.NewTypeName(token.NoPos, nil, "Handle", nil)
-	handle_type := types.NewNamed(handle_type_name, types.Typ[types.UnsafePointer], nil)
-	types.Universe.Insert(handle_type_name)
-	
-	strmap := types.NewTypeName(token.NoPos, nil, "Map", handle_type)
-	types.NewNamed(strmap, nil, nil)
-	types.Universe.Insert(strmap)
 	
 	/// defined constants.
 	types.Universe.Insert(types.NewVar(token.NoPos, nil, "MaxClients", types.Typ[types.Int]))
@@ -181,21 +220,49 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 			
 			case *ast.TypeSpec:
 				ManageExprNode(nil, s.Name)
-				s.Assign = -1
 				/// make sure struct fields are not pointers or slices.
-				if struc, is_struct := s.Type.(*ast.StructType); is_struct {
-					if !struc.Incomplete {
-						for _, f := range struc.Fields.List {
-							switch t := f.Type.(type) {
-								case *ast.StarExpr:
-									PrintSrcGoErr(t.Pos(), "Pointers are not allowed in Structs.")
-								case *ast.ArrayType:
-									if t.Len==nil {
-										PrintSrcGoErr(t.Pos(), "Slices are not allowed in Structs.")
-									}
+				switch t := s.Type.(type) {
+					case *ast.StructType:
+						if !t.Incomplete {
+							for _, f := range t.Fields.List {
+								switch t := f.Type.(type) {
+									case *ast.StarExpr:
+										PrintSrcGoErr(t.Pos(), "Pointers are not allowed in Structs.")
+									case *ast.ArrayType:
+										if t.Len==nil {
+											PrintSrcGoErr(t.Pos(), "Arrays of unknown size are not allowed in Structs.")
+										}
+								}
 							}
 						}
-					}
+					
+					case *ast.FuncType:
+						//Params  *FieldList // (incoming) parameters; non-nil
+						//Results *FieldList // (outgoing) results; or nil
+						if t.Results != nil && len(t.Results.List) > 1 {
+							/// too many return values, add them as pointer params!
+							results := len(t.Results.List)
+							for i:=1; i<results; i++ {
+								ret := t.Results.List[i]
+								/// if they're named, treat as reference types.
+								if ret.Names != nil && len(ret.Names) > 1 {
+									ret.Type = PtrizeExpr(ret.Type)
+									t.Params.List = append(t.Params.List, ret)
+								} else {
+									ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("%s_param%d", s.Name.Name, i)))
+									ret.Type = PtrizeExpr(ret.Type)
+									t.Params.List = append(t.Params.List, ret)
+								}
+							}
+							t.Results.List = t.Results.List[:1]
+						} else if len(t.Results.List)==1 && t.Results.List[0].Names != nil && len(t.Results.List[0].Names) > 1 {
+							t.Results.List[0].Type = PtrizeExpr(t.Results.List[0].Type)
+							t.Params.List = append(t.Params.List, t.Results.List[0])
+							t.Results = nil
+						}
+					
+					/// TODO: make interface compile to a typeset?
+					case *ast.InterfaceType:
 				}
 		}
 	}
@@ -230,10 +297,8 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 	}
 	
 	if f.Type.Results != nil {
-		for _, ret := range f.Type.Results.List {
-			if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
-				PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
-			}
+		if !CheckReturnTypes(f) {
+			return
 		}
 		
 		/// func f() (int, float) {} => func f(_param1 *float) int {}
