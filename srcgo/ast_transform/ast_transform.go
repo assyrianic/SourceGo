@@ -19,13 +19,13 @@ import (
 	"bytes"
 	"strings"
 	"unicode"
+	"errors"
 	"go/token"
 	"go/ast"
 	"go/types"
 	"go/format"
 	"go/constant"
 )
-
 
 var (
 	ASTCtxt struct {
@@ -34,6 +34,7 @@ var (
 		FSet          *token.FileSet
 		BuiltnTypes   map[string]types.Object
 		StrDefs       map[string]types.Object
+		Err           func(err error)
 	}
 )
 
@@ -96,7 +97,7 @@ func FindStmt(a []ast.Stmt, x ast.Stmt) int {
 }
 
 func PrintSrcGoErr(p token.Pos, msg string) {
-	fmt.Println("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg)
+	ASTCtxt.Err(errors.New("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg))
 }
 
 func CheckReturnTypes(n ast.Node) bool {
@@ -197,9 +198,10 @@ func AddSrcGoTypes() {
 }
 
 
-func AnalyzeFile(f *ast.File, info *types.Info) {
+func AnalyzeFile(f *ast.File, info *types.Info, err_fn func(err error)) {
 	ASTCtxt.SrcGoTypeInfo = info
 	ASTCtxt.StrDefs     = make(map[string]types.Object)
+	ASTCtxt.Err = err_fn
 	
 	for key, value := range ASTCtxt.SrcGoTypeInfo.Defs {
 		ASTCtxt.StrDefs[key.Name] = value
@@ -235,15 +237,15 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 			case *ast.ImportSpec:
 			case *ast.ValueSpec:
 				for _, n := range s.Names {
-					ManageExprNode(nil, n)
+					ManageExprNode(nil, nil, n)
 				}
-				ManageExprNode(nil, s.Type)
+				ManageExprNode(nil, nil, s.Type)
 				for _, e := range s.Values {
-					ManageExprNode(nil, e)
+					ManageExprNode(nil, nil, e)
 				}
 			
 			case *ast.TypeSpec:
-				ManageExprNode(nil, s.Name)
+				ManageExprNode(nil, nil, s.Name)
 				/// make sure struct fields are not pointers or slices.
 				switch t := s.Type.(type) {
 					case *ast.StructType:
@@ -413,10 +415,10 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			}
 			
 			for _, e := range n.Lhs {
-				ManageExprNode(owner_block, e)
+				ManageExprNode(owner_block, s, e)
 			}
 			for _, e := range n.Rhs {
-				ManageExprNode(owner_block, e)
+				ManageExprNode(owner_block, s, e)
 			}
 		
 		case *ast.BlockStmt:
@@ -435,7 +437,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 		case *ast.EmptyStmt:
 			
 		case *ast.ExprStmt:
-			ManageExprNode(owner_block, n.X)
+			ManageExprNode(owner_block, s, n.X)
 			
 		case *ast.ForStmt:
 			/// in Golang, 'for' replaces both for and while-loops.
@@ -444,7 +446,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 				ManageStmtNode(owner_block, n.Init)
 			}
 			if n.Cond != nil { /// condition; or nil
-				ManageExprNode(owner_block, n.Cond)
+				ManageExprNode(owner_block, s, n.Cond)
 			}
 			if n.Post != nil { /// post iteration statement; or nil
 				ManageStmtNode(owner_block, n.Post)
@@ -456,14 +458,14 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			if n.Init != nil {
 				ManageStmtNode(owner_block, n.Init)
 			}
-			ManageExprNode(owner_block, n.Cond)
+			ManageExprNode(owner_block, s, n.Cond)
 			AnalyzeBlockStmt(n.Body)
 			if n.Else != nil {
 				ManageStmtNode(owner_block, n.Else)
 			}
 			
 		case *ast.IncDecStmt:
-			ManageExprNode(owner_block, n.X)
+			ManageExprNode(owner_block, s, n.X)
 			
 		case *ast.ReturnStmt:
 			/// change multiple var returns into passing by reference.
@@ -478,18 +480,17 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 				owner_block.List = InsertStmt(owner_block.List, index, assign)
 				index++
 			}
-			n.Results = n.Results[:1]
 			if res_len > 1 {
+				n.Results = n.Results[:1]
 				AnalyzeBlockStmt(owner_block) /// reanalyze
 			}
 		
 		case *ast.SwitchStmt:
 			ManageStmtNode(owner_block, n.Init)
-			ManageExprNode(owner_block, n.Tag)
+			ManageExprNode(owner_block, s, n.Tag)
 			AnalyzeBlockStmt(n.Body)
 			
-			/** TODO:
-			 * Switch statements can be "true" aka empty expression
+			/** TODO: Switch statements can be "true" aka empty expression
 			 * to work as a more compact if-else-if series:
 			 * 
 			 * switch {
@@ -504,7 +505,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 		
 		case *ast.CaseClause:
 			for _, expr := range n.List {
-				ManageExprNode(owner_block, expr)
+				ManageExprNode(owner_block, s, expr)
 			}
 			for _, stmt := range n.Body {
 				ManageStmtNode(owner_block, stmt)
@@ -536,25 +537,25 @@ func AnalyzeBlockStmt(b *ast.BlockStmt) {
 }
 
 
-func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
+func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr) {
 	switch x := e.(type) {
 		case *ast.IndexExpr:
-			ManageExprNode(owner_block, x.X)
-			ManageExprNode(owner_block, x.Index)
+			ManageExprNode(owner_block, owner_stmt, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.Index)
 		
 		case *ast.KeyValueExpr:
-			ManageExprNode(owner_block, x.Key)
-			ManageExprNode(owner_block, x.Value)
+			ManageExprNode(owner_block, owner_stmt, x.Key)
+			ManageExprNode(owner_block, owner_stmt, x.Value)
 		
 		case *ast.ParenExpr:
-			ManageExprNode(owner_block, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.X)
 		
 		case *ast.StarExpr:
 			/// in an ordinary block, we ignore the dereference since it'll become a reference.
-			ManageExprNode(owner_block, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.X)
 		
 		case *ast.UnaryExpr:
-			ManageExprNode(owner_block, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.X)
 		
 		case *ast.CallExpr:
 			/// check for *ast.SelectorExpr
@@ -562,9 +563,56 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 				x.Args = InsertExpr(x.Args, 0, caller.X)
 				x.Fun = caller.Sel
 			}
-			ManageExprNode(owner_block, x.Fun)
+			callid, _ := x.Fun.(*ast.Ident)
+			if obj, found := ASTCtxt.StrDefs[callid.Name]; found && obj != nil {
+				if _, is_fptr := obj.(*types.Var); is_fptr {
+					/*
+					call_start := new(ast.CallExpr)
+					call_start.Fun = ast.NewIdent("Call_StartFunction")
+					call_start.Args = append(call_start.Args, ast.NewIdent("nil"))
+					call_start.Args = append(call_start.Args, x.Fun)
+					
+					call_start_stmt := new(ast.ExprStmt)
+					call_start_stmt.X = call_start
+					stmt_index := FindStmt(owner_block.List, owner_stmt)
+					owner_block.List = InsertStmt(owner_block.List, stmt_index, call_start_stmt)
+					*/
+					for _, arg := range x.Args {
+						if typ := ASTCtxt.SrcGoTypeInfo.TypeOf(arg); typ != nil {
+							switch t := typ.(type) {
+								case *types.Array:
+									switch t.Elem().String() {
+										case "char":
+											//"Call_PushStringEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
+										default:
+											//"Call_PushArrayEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
+									}
+								case *types.Pointer:
+									switch t.Elem().String() {
+										case "float":
+											//"Call_PushFloatRef(%s); ", GetExprString(arg))
+										default:
+											//"Call_PushCellRef(%s); ", GetExprString(arg))
+									}
+								case *types.Basic:
+									switch t.Name() {
+										case "string":
+											//"Call_PushString(%s); ", GetExprString(arg))
+										case "float", "float32":
+											//"Call_PushFloat(%s); ", GetExprString(arg))
+										default:
+											//"Call_PushCell(%s); ", GetExprString(arg))
+									}
+							}
+						}
+					}
+					//owner_block.List = owner_block.List[:stmt_index]
+				}
+				//"Call_Finish();")
+			}
+			ManageExprNode(owner_block, owner_stmt, x.Fun)
 			for _, arg := range x.Args {
-				ManageExprNode(owner_block, arg)
+				ManageExprNode(owner_block, owner_stmt, arg)
 			}
 		
 		case *ast.BinaryExpr: /// a op b
@@ -590,12 +638,12 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 				n.X = p
 				x.Y = n
 			}
-			ManageExprNode(owner_block, x.X)
-			ManageExprNode(owner_block, x.Y)
+			ManageExprNode(owner_block, owner_stmt, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.Y)
 		
 		case *ast.SelectorExpr:
-			ManageExprNode(owner_block, x.X)
-			ManageExprNode(owner_block, x.Sel)
+			ManageExprNode(owner_block, owner_stmt, x.X)
+			ManageExprNode(owner_block, owner_stmt, x.Sel)
 		
 		case *ast.Ident:
 			//Obj *Object   // denoted object; or nil
@@ -614,22 +662,23 @@ func ManageExprNode(owner_block *ast.BlockStmt, e ast.Expr) {
 	}
 }
 
-func PrintAST(f *ast.File) {
+func PrintAST(f *ast.File) string {
+	var ast_str string
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n != nil {
-			fmt.Println(fmt.Sprintf("%p - %T:\t\t", n, n), n)
+			ast_str += fmt.Sprintf("%p - %T:\t\t%+v", n, n, n) + "\n"
 		}
 		return true
 	})
-	fmt.Println("\n")
+	return ast_str
 }
 
-func PrettyPrintAST(f *ast.File) {
+func PrettyPrintAST(f *ast.File) string {
 	fset := token.NewFileSet()
 	var buf bytes.Buffer
 	err := format.Node(&buf, fset, f)
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(buf.String())
+	return buf.String()
 }

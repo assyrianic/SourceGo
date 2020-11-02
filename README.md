@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.16a
+v0.17a
 
 ## Introduction
 
@@ -62,6 +62,11 @@ Generate SourcePawn source code that is compileable by `spcomp` without having t
 To submit a patch, file an issue and/or hit up a pull request.
 
 ## Help
+
+Commandline options:
+* `-debug` - prints the file's modified AST and pretty-printed version to a file for later checking.
+
+* `-force` - forcefully generates a SourcePawn source code file, even if errors/issues occurred during transpilation.
 
 If you need help or have any question, simply file an issue with **\[HELP\]** in the title.
 

@@ -29,59 +29,83 @@ import (
 	"./srcgo/ast_to_sp"
 )
 
+
+const (
+	Flag_Debug = (iota + 1) << 1
+	Flag_Force
+)
+
 func main() {
 	files := os.Args[1:]
 	SrcGo_ASTMod.AddSrcGoTypes()
+	var opts int
 	for _, file := range files {
-		fset := token.NewFileSet()
 		var bad_compile bool
-		code, err1 := ioutil.ReadFile("./" + file)
-		CheckErr(err1)
-		f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors /*| parser.ParseComments*/)
-		if err2 != nil {
-			for _, e := range err2.(scanner.ErrorList) {
-				fmt.Println(e)
-			}
-			bad_compile = true
-		} else {
-			var typeErrors []error
-			conf := types.Config{
-				Importer: importer.Default(),
-				DisableUnusedImportCheck: true,
-				Error: func(err error) {
-					typeErrors = append(typeErrors, err)
-				},
-			}
-			info := &types.Info{
-				Types:      make(map[ast.Expr]types.TypeAndValue), 
-				Defs:       make(map[*ast.Ident]types.Object),
-				Uses:       make(map[*ast.Ident]types.Object),
-				Implicits:  make(map[ast.Node]types.Object),
-				Scopes:     make(map[ast.Node]*types.Scope),
-				Selections: make(map[*ast.SelectorExpr]*types.Selection),
-			}
-			
-			if _, err := conf.Check("", fset, []*ast.File{f}, info); err != nil {
-				for _, e := range typeErrors {
-					fmt.Println(e) /// type error
+		switch file {
+			case "--debug", "-dbg":
+				opts |= Flag_Debug
+			case "-f", "--force", "--force-gen":
+				opts |= Flag_Force
+			case "--help", "-h":
+				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
+			case "--version", "-v":
+				fmt.Println("SourceGo version: v0.17a")
+			default:
+				fset := token.NewFileSet()
+				code, err1 := ioutil.ReadFile(file)
+				CheckErr(err1)
+				f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors /*| parser.ParseComments*/)
+				if err2 != nil {
+					for _, e := range err2.(scanner.ErrorList) {
+						fmt.Println(e)
+					}
+					bad_compile = true
+				} else {
+					var typeErrs, transpileErrs []error
+					conf := types.Config{
+						Importer: importer.Default(),
+						DisableUnusedImportCheck: true,
+						Error: func(err error) {
+							typeErrs = append(typeErrs, err)
+						},
+					}
+					info := &types.Info{
+						Types:      make(map[ast.Expr]types.TypeAndValue), 
+						Defs:       make(map[*ast.Ident]types.Object),
+						Uses:       make(map[*ast.Ident]types.Object),
+						Implicits:  make(map[ast.Node]types.Object),
+						Scopes:     make(map[ast.Node]*types.Scope),
+						Selections: make(map[*ast.SelectorExpr]*types.Selection),
+					}
+					
+					if _, err := conf.Check("", fset, []*ast.File{f}, info); err != nil {
+						for _, e := range typeErrs {
+							fmt.Println(e) /// type error
+						}
+						bad_compile = true
+					}
+					SrcGo_ASTMod.ASTCtxt.FSet = fset
+					SrcGo_ASTMod.AnalyzeFile(f, info, func(err error) {
+						transpileErrs = append(transpileErrs, err)
+					})
+					for _, e := range transpileErrs {
+						fmt.Println(e)
+					}
+					
+					/// do second type check.
+					conf.Check("", fset, []*ast.File{f}, info)
+					if (opts & Flag_Debug) > 0 {
+						WriteToFile(fmt.Sprintf("%s_AST.txt", file), SrcGo_ASTMod.PrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_PrettyPrintAST.txt", file), SrcGo_ASTMod.PrettyPrintAST(f))
+					}
 				}
-				bad_compile = true
-			}
-			SrcGo_ASTMod.ASTCtxt.FSet = fset
-			//SrcGo_ASTMod.PrintAST(f)
-			SrcGo_ASTMod.AnalyzeFile(f, info)
-			/// do second type check.
-			conf.Check("", fset, []*ast.File{f}, info)
-			SrcGo_ASTMod.PrintAST(f)
-			SrcGo_ASTMod.PrettyPrintAST(f)
-			final_code := SrcGoSPGen.GenSPFile(f)
-			WriteToFile(file + ".sp", final_code)
-		}
-		
-		if bad_compile {
-			fmt.Println(fmt.Sprintf("SourceGo: file '%s'.sp was generated but might need correction.", file))
-		} else {
-			fmt.Println(fmt.Sprintf("SourceGo: successfully transpiled '%s.sp'.", file))
+				if bad_compile && (opts & Flag_Force)==0 {
+					fmt.Println(fmt.Sprintf("SourceGo: file '%s'.sp generation FAILED.", file))
+				} else {
+					final_code := SrcGoSPGen.GenSPFile(f)
+					WriteToFile(file + ".sp", final_code)
+					fmt.Println(fmt.Sprintf("SourceGo: successfully transpiled '%s.sp'.", file))
+				}
 		}
 	}
 }
