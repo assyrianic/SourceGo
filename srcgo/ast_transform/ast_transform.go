@@ -180,11 +180,18 @@ func AddSrcGoTypes() {
 	types.NewNamed(ext_type_name, ext_struc, nil)
 	types.Universe.Insert(ext_type_name)
 	
+	/// Action
 	MakeNamedType("Action", types.Typ[types.Int], nil)
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Continue", types.Typ[types.Int], constant.MakeInt64(0)))
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Changed", types.Typ[types.Int], constant.MakeInt64(1)))
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Handled", types.Typ[types.Int], constant.MakeInt64(2)))
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Stop", types.Typ[types.Int], constant.MakeInt64(3)))
+	
+	/// TODO: make it easier to create Handle-based types?
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
-	MakeNamedType("Map", types.Typ[types.UnsafePointer], nil)
-	MakeNamedType("Array", types.Typ[types.UnsafePointer], nil)
-	MakeNamedType("Event", types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Map",    types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Array",  types.Typ[types.UnsafePointer], nil)
+	MakeNamedType("Event",  types.Typ[types.UnsafePointer], nil)
 	
 	/// TODO: define methods for the Handle types, Vec3, and Entity.
 	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
@@ -513,8 +520,22 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 		
 		case *ast.CommClause:
 			PrintSrcGoErr(n.Pos(), "Comm Select Cases are Illegal.")
+		
 		case *ast.RangeStmt: /// TODO: allow ranges for fixed-sized arrays?
 			PrintSrcGoErr(n.Pos(), "Ranges are Illegal.")
+		/** TODO
+		 * Make the ranged for-statements as something like:
+			for index, value := range fixed_size_array {
+			  /// code
+			}
+			*
+			* Into:
+			for (int index; index<sizeof(fixed_size_array); i++) {
+			  Value value = fixed_size_array[i];
+			  /// code
+			}
+		 */
+			
 		case *ast.DeferStmt:
 			PrintSrcGoErr(n.Pos(), "Defer Statements are Illegal.")
 		case *ast.TypeSwitchStmt:
