@@ -100,25 +100,20 @@ func PrintSrcGoErr(p token.Pos, msg string) {
 }
 
 func CheckReturnTypes(n ast.Node) bool {
+	var list *ast.FieldList
 	switch f := n.(type) {
 		case *ast.FuncDecl:
-			if f.Type.Results != nil {
-				for _, ret := range f.Type.Results.List {
-					if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
-						PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
-						return false
-					}
-				}
-			}
+			list = f.Type.Results
 		case *ast.FuncType:
-			if f.Results != nil {
-				for _, ret := range f.Results.List {
-					if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
-						PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed.")
-						return false
-					}
-				}
+			list = f.Results
+	}
+	if list != nil {
+		for i, ret := range list.List {
+			if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+				PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed." + fmt.Sprintf(" Param %d is a pointer", i))
+				return false
 			}
+		}
 	}
 	return true
 }
@@ -162,7 +157,6 @@ func AddSrcGoTypes() {
 	vec3_type_name := types.NewTypeName(token.NoPos, nil, "Vec3", vec3_array)
 	types.Universe.Insert(vec3_type_name)
 	
-	///*
 	plugin_reg_struc := types.NewStruct([]*types.Var{
 		types.NewField(token.NoPos, nil, "name",        types.Typ[types.String], false),
 		types.NewField(token.NoPos, nil, "description", types.Typ[types.String], false),
@@ -173,7 +167,17 @@ func AddSrcGoTypes() {
 	plugin_reg_type_name := types.NewTypeName(token.NoPos, nil, "Plugin", nil)
 	types.NewNamed(plugin_reg_type_name, plugin_reg_struc, nil)
 	types.Universe.Insert(plugin_reg_type_name)
-	//*/
+	
+	/// per request of JoinedSenses.
+	ext_struc := types.NewStruct([]*types.Var{
+		types.NewField(token.NoPos, nil, "name",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "file",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "autoload", types.Typ[types.Int], false),
+		types.NewField(token.NoPos, nil, "required", types.Typ[types.Int], false),
+	}, nil)
+	ext_type_name := types.NewTypeName(token.NoPos, nil, "Extension", nil)
+	types.NewNamed(ext_type_name, ext_struc, nil)
+	types.Universe.Insert(ext_type_name)
 	
 	MakeNamedType("Action", types.Typ[types.Int], nil)
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
@@ -257,8 +261,6 @@ func AnalyzeGenDecl(g *ast.GenDecl) {
 						}
 					
 					case *ast.FuncType:
-						//Params  *FieldList // (incoming) parameters; non-nil
-						//Results *FieldList // (outgoing) results; or nil
 						if t.Results != nil && len(t.Results.List) > 1 {
 							/// too many return values, add them as pointer params!
 							results := len(t.Results.List)
@@ -360,7 +362,6 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			left_len := len(n.Lhs)
 			rite_len := len(n.Rhs)
 			funct, is_func_call := n.Rhs[0].(*ast.CallExpr)
-			
 			if rite_len==1 && left_len >= rite_len && is_func_call {
 				/// a func call returning multiple items.
 				switch n.Tok {
@@ -410,13 +411,13 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 						}
 				}
 			}
+			
 			for _, e := range n.Lhs {
 				ManageExprNode(owner_block, e)
 			}
 			for _, e := range n.Rhs {
 				ManageExprNode(owner_block, e)
 			}
-			//Values  []Expr        // initial values; or nil
 		
 		case *ast.BlockStmt:
 			AnalyzeBlockStmt(n)

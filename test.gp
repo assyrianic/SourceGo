@@ -1,6 +1,5 @@
 package main
-
-/*
+///*
 const (
 	a, b = "A", MAXPLAYERS
 	c = a
@@ -8,7 +7,6 @@ const (
 	e = "e1"
 	f = 1.00
 )
-*/
 
 var (
 	myself = Plugin{
@@ -29,7 +27,6 @@ var (
 	b Handle = nil
 	c = 50.0
 )
-
 /*
 func NBC() Entity
 
@@ -37,8 +34,7 @@ func main() {
 	var pf func() Entity = NBC
 	pf()
 }
-*/
-/*
+
 type (
 	Point struct{ x, y float }
 	Points struct { p [3*99]Point }
@@ -53,13 +49,25 @@ type PlayerInfo struct {
 	P QAngle
 	M [3][10]int
 }
-*/
 
-/*
-type Kektus func(i, x Vec3, b string, blocks *[64]char, KC *int) Handle
+type Kektus func(i, x Vec3, b string, blocks *Name, KC *int) Handle
 type EventFunc func(event Event, name string, dontBroadcast bool) Action
-
+*/
+/*
 func GetNil() Handle {
-	return nil
+	for i:=1; i<=MaxClients; i++ {
+	}
+	v := Handle(nil)
+	return v
 }
 */
+func OnlyScoutsLeft(team int) bool {
+	for i:=MaxClients; i>0; i-- {
+		if !IsValidClient(i) || !IsPlayerAlive(i) {
+			continue;
+		} else if GetClientTeam(i) == team && TF2_GetPlayerClass(i) != TFClass_Scout {
+			return false
+		}
+	}
+	return true
+}

@@ -34,7 +34,7 @@ func main() {
 	SrcGo_ASTMod.AddSrcGoTypes()
 	for _, file := range files {
 		fset := token.NewFileSet()
-		var no_compile bool
+		var bad_compile bool
 		code, err1 := ioutil.ReadFile("./" + file)
 		CheckErr(err1)
 		f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors /*| parser.ParseComments*/)
@@ -42,7 +42,7 @@ func main() {
 			for _, e := range err2.(scanner.ErrorList) {
 				fmt.Println(e)
 			}
-			no_compile = true
+			bad_compile = true
 		} else {
 			var typeErrors []error
 			conf := types.Config{
@@ -65,18 +65,20 @@ func main() {
 				for _, e := range typeErrors {
 					fmt.Println(e) /// type error
 				}
-				no_compile = true
+				bad_compile = true
 			}
 			SrcGo_ASTMod.ASTCtxt.FSet = fset
-			SrcGo_ASTMod.PrintAST(f)
+			//SrcGo_ASTMod.PrintAST(f)
 			SrcGo_ASTMod.AnalyzeFile(f, info)
-			
+			/// do second type check.
+			conf.Check("", fset, []*ast.File{f}, info)
+			SrcGo_ASTMod.PrintAST(f)
 			SrcGo_ASTMod.PrettyPrintAST(f)
 			final_code := SrcGoSPGen.GenSPFile(f)
 			WriteToFile(file + ".sp", final_code)
 		}
 		
-		if no_compile {
+		if bad_compile {
 			fmt.Println(fmt.Sprintf("SourceGo: file '%s'.sp was generated but might need correction.", file))
 		} else {
 			fmt.Println(fmt.Sprintf("SourceGo: successfully transpiled '%s.sp'.", file))
