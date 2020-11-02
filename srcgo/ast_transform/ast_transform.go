@@ -33,6 +33,7 @@ var (
 		CurrFunc      *ast.FuncDecl
 		FSet          *token.FileSet
 		BuiltnTypes   map[string]types.Object
+		StrDefs       map[string]types.Object
 	}
 )
 
@@ -153,12 +154,26 @@ func AddSrcGoTypes() {
 	ASTCtxt.BuiltnTypes = make(map[string]types.Object)
 	
 	MakeTypeAlias("char", types.Typ[types.Int8], true)
-	MakeTypeAlias("Entity", types.Typ[types.Int], true)
+	MakeTypeAlias("Entity", types.Typ[types.Int], false)
+	MakeTypeAlias("Address", types.Typ[types.Int], true)
 	MakeTypeAlias("float", types.Typ[types.Float32], false)
 	
 	vec3_array := types.NewArray(types.Typ[types.Float32], 3)
 	vec3_type_name := types.NewTypeName(token.NoPos, nil, "Vec3", vec3_array)
 	types.Universe.Insert(vec3_type_name)
+	
+	///*
+	plugin_reg_struc := types.NewStruct([]*types.Var{
+		types.NewField(token.NoPos, nil, "name",        types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "description", types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "author",      types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "version",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "url",         types.Typ[types.String], false),
+	}, nil)
+	plugin_reg_type_name := types.NewTypeName(token.NoPos, nil, "Plugin", nil)
+	types.NewNamed(plugin_reg_type_name, plugin_reg_struc, nil)
+	types.Universe.Insert(plugin_reg_type_name)
+	//*/
 	
 	MakeNamedType("Action", types.Typ[types.Int], nil)
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
@@ -180,6 +195,11 @@ func AddSrcGoTypes() {
 
 func AnalyzeFile(f *ast.File, info *types.Info) {
 	ASTCtxt.SrcGoTypeInfo = info
+	ASTCtxt.StrDefs     = make(map[string]types.Object)
+	
+	for key, value := range ASTCtxt.SrcGoTypeInfo.Defs {
+		ASTCtxt.StrDefs[key.Name] = value
+	}
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
