@@ -1,5 +1,29 @@
 package main
 
+const (
+	a, b = "A", MAXPLAYERS
+	c = a
+	d string = "D"
+	e = "e1"
+	f = 1.00
+)
+
+var (
+	myself = Plugin{
+		name: "SrcGo Plugin",
+		author: "Nergal",
+		description: "Plugin made into SP from SrcGo.",
+		version: "1.0a",
+		url: "https://github.com/assyrianic/Go2SourcePawn",
+	}
+	
+	str_array = [...]string{
+		"kek",
+		"foo",
+		"bar",
+		"bazz",
+	}
+)
 
 type (
 	Point struct{ x, y float }
@@ -17,26 +41,21 @@ type (
 	EventFunc func(event Event, name string, dontBroadcast bool) Action
 )
 
-
-func OnlyScoutsLeft(team int) bool {
-	for i:=0; i<=MaxClients; i++ {
-		if !IsValidClient(i) || !IsPlayerAlive(i) {
-			continue;
-		} else if GetClientTeam(i) == team && TF2_GetPlayerClass(i) != TFClass_Scout {
-			return false
-		}
-	}
-	return true
+func (pi PlayerInfo) GetOrigin(buffer *Vec3) {
+	*buffer = pi.Origin
 }
-
 
 func IsClientInGame(client Entity) bool
 
 func main() {
+	var p PlayerInfo
 	for i := 1; i<=MaxClients; i++ {
 		if IsClientInGame(i) {
 			OnClientPutInServer(i)
 		}
+		var origin Vec3
+		p.GetOrigin(&origin)
+		PrintToServer("%f, %f, %f", origin[0], origin[1], origin[2])
 	}
 }
 

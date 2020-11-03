@@ -582,6 +582,9 @@ func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr)
 			/// check for *ast.SelectorExpr
 			if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call {
 				x.Args = InsertExpr(x.Args, 0, caller.X)
+				if typ := ASTCtxt.SrcGoTypeInfo.TypeOf(caller.X); typ != nil {
+					caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
+				}
 				x.Fun = caller.Sel
 			}
 			callid, _ := x.Fun.(*ast.Ident)
