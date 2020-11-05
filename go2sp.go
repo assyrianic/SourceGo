@@ -49,7 +49,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.19a")
+				fmt.Println("SourceGo version: v0.20a")
 			default:
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(file)
@@ -96,15 +96,20 @@ func main() {
 					conf.Check("", fset, []*ast.File{f}, info)
 					if (opts & Flag_Debug) > 0 {
 						WriteToFile(fmt.Sprintf("%s_AST.txt", file), SrcGo_ASTMod.PrintAST(f))
-						WriteToFile(fmt.Sprintf("%s_PrettyPrintAST.txt", file), SrcGo_ASTMod.PrettyPrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_ASTCode.txt", file), SrcGo_ASTMod.PrettyPrintAST(f))
 					}
 				}
+				new_file_name := fmt.Sprintf("%s.sp", file)
 				if bad_compile && (opts & Flag_Force)==0 {
-					fmt.Println(fmt.Sprintf("SourceGo: file '%s'.sp generation FAILED.", file))
+					fmt.Println(fmt.Sprintf("SourceGo: file '%s' generation FAILED.", new_file_name))
 				} else {
 					final_code := SrcGoSPGen.GenSPFile(f)
 					WriteToFile(file + ".sp", final_code)
-					fmt.Println(fmt.Sprintf("SourceGo: successfully transpiled '%s.sp'.", file))
+					if bad_compile {
+						fmt.Println("SourceGo: transpiled " + new_file_name + " but might need correction.")
+					} else {
+						fmt.Println("SourceGo: successfully transpiled " + new_file_name)
+					}
 				}
 		}
 	}

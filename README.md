@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.19a
+v0.20a
 
 ## Introduction
 
@@ -44,10 +44,18 @@ Becomes:
 #include "file"
 ```
 
+* Multiple return values are supported by transpiling them into variable references.
+* Range loops for arrays:
+```go
+var players [MAXPLAYERS+1]Entity
+for index, player := range players {
+	/// code;
+}
+```
+
 ### Planned Features
 * Generate Natives and an include file for them.
 * Abstract, type-based syntax translation for higher data types like `StringMap` and `ArrayList`.
-* Multiple return values are supported by transpiling them into variable references.
 * Abstract function pointers from manual Function API calling.
 * Abstract anonymous functions into name-generated functions. (perfect for abstracting timers)
 * Handle-based Data Structures are abstracted into supportive syntax such where it's `value = Map["key"]` instead of `map.GetValue("key", value);`
@@ -64,9 +72,13 @@ To submit a patch, file an issue and/or hit up a pull request.
 ## Help
 
 Commandline options:
-* `-debug` - prints the file's modified AST and pretty-printed version to a file for later checking.
+* `--debug`, `-dbg` - prints the file's modified AST and pretty-printed version to a file for later checking.
 
-* `-force` - forcefully generates a SourcePawn source code file, even if errors/issues occurred during transpilation.
+* `--force`, `-f` - forcefully generates a SourcePawn source code file, even if errors/issues occurred during transpilation.
+
+* `--help`, `-h` - Prints help list.
+
+* `--version`, `-v` - Prints the version of SourceGo.
 
 If you need help or have any question, simply file an issue with **\[HELP\]** in the title.
 

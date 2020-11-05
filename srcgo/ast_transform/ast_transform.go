@@ -35,6 +35,7 @@ var (
 		BuiltnTypes   map[string]types.Object
 		StrDefs       map[string]types.Object
 		Err           func(err error)
+		RangeIter     uint
 	}
 )
 
@@ -44,11 +45,65 @@ func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	return ptr
 }
 
+func MakeBasicLit(tok token.Token, value string) *ast.BasicLit {
+	bl := new(ast.BasicLit)
+	bl.Kind = tok
+	bl.Value = value
+	return bl
+}
+
+func MakeIdent(n string) *ast.Ident {
+	id := new(ast.Ident)
+	id.Name = n
+	return id
+}
+
 func Arrayify(typ ast.Expr, len ast.Expr) *ast.ArrayType {
 	a := new(ast.ArrayType)
 	a.Len = len
 	a.Elt = typ
 	return a
+}
+
+func GetTypeBase(t types.Type) types.Type {
+	switch t := t.(type) {
+		case *types.Array:
+			return t.Elem()
+		case *types.Named:
+			return nil
+		case *types.Slice:
+			return t.Elem()
+		case *types.Pointer:
+			return t.Elem()
+		case *types.Basic:
+			return nil
+		default:
+			return nil
+	}
+}
+
+/// Turn a value expr into a type expr.
+func ValueToTypeExpr(val ast.Expr) ast.Expr {
+	var type_stack []types.Type
+	typ := ASTCtxt.SrcGoTypeInfo.TypeOf(val);
+	for typ != nil {
+		type_stack = append(type_stack, typ)
+		typ = GetTypeBase(typ)
+	}
+	
+	/// iterate backwards to build the AST
+	x := (ast.Expr)(nil)
+	for i := len(type_stack) - 1; i >= 0; i-- {
+		switch t := type_stack[i].(type) {
+			case *types.Array:
+				x = Arrayify( x, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())) )
+			case *types.Pointer:
+				x = PtrizeExpr(x)
+			case *types.Basic, *types.Named:
+				x = MakeIdent(t.String())
+		}
+	}
+	return x
 }
 
 func InsertExpr(a []ast.Expr, index int, value ast.Expr) []ast.Expr {
@@ -134,6 +189,14 @@ func MakeNamedType(name string, typ types.Type, methods []*types.Func) {
 	ASTCtxt.BuiltnTypes[name] = alias
 }
 
+func MakeIntConst(name string, num int64) {
+	types.Universe.Insert(types.NewConst(token.NoPos, nil, name, types.Typ[types.Int], constant.MakeInt64(num)))
+}
+
+func MakeIntVar(name string) {
+	types.Universe.Insert(types.NewVar(token.NoPos, nil, name, types.Typ[types.Int]))
+}
+
 
 func AddSrcGoTypes() {
 	/**
@@ -159,11 +222,11 @@ func AddSrcGoTypes() {
 	types.Universe.Insert(vec3_type_name)
 	
 	plugin_reg_struc := types.NewStruct([]*types.Var{
-		types.NewField(token.NoPos, nil, "name",        types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "description", types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "author",      types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "version",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "url",         types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Name",        types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Description", types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Author",      types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Version",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Url",         types.Typ[types.String], false),
 	}, nil)
 	plugin_reg_type_name := types.NewTypeName(token.NoPos, nil, "Plugin", nil)
 	types.NewNamed(plugin_reg_type_name, plugin_reg_struc, nil)
@@ -171,10 +234,10 @@ func AddSrcGoTypes() {
 	
 	/// per request of JoinedSenses.
 	ext_struc := types.NewStruct([]*types.Var{
-		types.NewField(token.NoPos, nil, "name",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "file",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "autoload", types.Typ[types.Int], false),
-		types.NewField(token.NoPos, nil, "required", types.Typ[types.Int], false),
+		types.NewField(token.NoPos, nil, "Name",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "File",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "Autoload", types.Typ[types.Int], false),
+		types.NewField(token.NoPos, nil, "Required", types.Typ[types.Int], false),
 	}, nil)
 	ext_type_name := types.NewTypeName(token.NoPos, nil, "Extension", nil)
 	types.NewNamed(ext_type_name, ext_struc, nil)
@@ -182,10 +245,10 @@ func AddSrcGoTypes() {
 	
 	/// Action
 	MakeNamedType("Action", types.Typ[types.Int], nil)
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Continue", types.Typ[types.Int], constant.MakeInt64(0)))
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Changed", types.Typ[types.Int], constant.MakeInt64(1)))
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Handled", types.Typ[types.Int], constant.MakeInt64(2)))
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "Plugin_Stop", types.Typ[types.Int], constant.MakeInt64(3)))
+	MakeIntConst("Plugin_Continue", 0)
+	MakeIntConst("Plugin_Changed",  1)
+	MakeIntConst("Plugin_Handled",  2)
+	MakeIntConst("Plugin_Stop",     3)
 	
 	/// TODO: make it easier to create Handle-based types?
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
@@ -197,11 +260,9 @@ func AddSrcGoTypes() {
 	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
 	
 	/// defined constants.
-	types.Universe.Insert(types.NewVar(token.NoPos, nil, "MaxClients", types.Typ[types.Int]))
-	
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "MAXPLAYERS", types.Typ[types.Int], constant.MakeInt64(65)))
-	
-	types.Universe.Insert(types.NewConst(token.NoPos, nil, "MAXENTS", types.Typ[types.Int], constant.MakeInt64(2048)))
+	MakeIntVar("MaxClients")
+	MakeIntConst("MAXPLAYERS", 65)
+	MakeIntConst("MAXPLAYERS", 2048)
 }
 
 
@@ -361,6 +422,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 		AnalyzeBlockStmt(f.Body);
 	}
 	ASTCtxt.CurrFunc = nil
+	ASTCtxt.RangeIter = 0
 }
 
 func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
@@ -394,8 +456,7 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 							for _, name := range val {
 								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
 							}
-							type_expr := new(ast.Ident)
-							type_expr.Name = key.String()
+							type_expr := MakeIdent(key.String())
 							val_spec.Type = type_expr
 							gen_decl.Specs = append(gen_decl.Specs, val_spec)
 						}
@@ -420,7 +481,6 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 						}
 				}
 			}
-			
 			for _, e := range n.Lhs {
 				ManageExprNode(owner_block, s, e)
 			}
@@ -518,24 +578,59 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 				ManageStmtNode(owner_block, stmt)
 			}
 		
+		case *ast.RangeStmt: /// TODO: adapt range statement for ArrayLists and other containers.
+			if n.Key != nil {
+				if iden, ok := n.Key.(*ast.Ident); ok && iden.Name=="_" {
+					n.Key = MakeIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+					ASTCtxt.RangeIter++
+				}
+			} else {
+				n.Key = MakeIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+				ASTCtxt.RangeIter++
+			}
+			ManageExprNode(owner_block, s, n.Key)
+			
+			if n.Value != nil {
+				if iden, ok := n.Value.(*ast.Ident); ok && iden.Name=="_" {
+					n.Value = nil
+				} else {
+					switch n.Tok {
+						case token.DEFINE:
+							decl_stmt := new(ast.DeclStmt)
+							gen_decl := new(ast.GenDecl)
+							gen_decl.Tok = token.VAR
+							
+							val_spec := new(ast.ValueSpec)
+							id := n.Value.(*ast.Ident)
+							val_spec.Names = append(val_spec.Names, id)
+							
+							val_spec.Type = ValueToTypeExpr(n.Value)
+							gen_decl.Specs = append(gen_decl.Specs, val_spec)
+							
+							
+							decl_stmt.Decl = gen_decl
+							n.Body.List = InsertStmt(n.Body.List, 0, decl_stmt)
+							
+							assign := new(ast.AssignStmt)
+							assign.Lhs = append(assign.Lhs, n.Value)
+							switch access := n.X.(type) {
+								case *ast.IndexExpr, *ast.Ident:
+									get_index := new(ast.IndexExpr)
+									get_index.Index = n.Key
+									get_index.X = access
+									assign.Rhs = append(assign.Rhs, get_index)
+							}
+							assign.Tok = token.ASSIGN
+							n.Body.List = InsertStmt(n.Body.List, 1, assign)
+							n.Value = nil
+					}
+				}
+			}
+			ManageExprNode(owner_block, s, n.X)
+			AnalyzeBlockStmt(n.Body)
+		
 		case *ast.CommClause:
 			PrintSrcGoErr(n.Pos(), "Comm Select Cases are Illegal.")
-		
-		case *ast.RangeStmt: /// TODO: allow ranges for fixed-sized arrays?
-			PrintSrcGoErr(n.Pos(), "Ranges are Illegal.")
-		/** TODO
-		 * Make the ranged for-statements as something like:
-			for index, value := range fixed_size_array {
-			  /// code
-			}
-			*
-			* Into:
-			for (int index; index<sizeof(fixed_size_array); i++) {
-			  Value value = fixed_size_array[i];
-			  /// code
-			}
-		 */
-			
 		case *ast.DeferStmt:
 			PrintSrcGoErr(n.Pos(), "Defer Statements are Illegal.")
 		case *ast.TypeSwitchStmt:
@@ -590,7 +685,6 @@ func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr)
 			callid, _ := x.Fun.(*ast.Ident)
 			if obj, found := ASTCtxt.StrDefs[callid.Name]; found && obj != nil {
 				if _, is_fptr := obj.(*types.Var); is_fptr {
-					/*
 					call_start := new(ast.CallExpr)
 					call_start.Fun = ast.NewIdent("Call_StartFunction")
 					call_start.Args = append(call_start.Args, ast.NewIdent("nil"))
@@ -600,14 +694,27 @@ func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr)
 					call_start_stmt.X = call_start
 					stmt_index := FindStmt(owner_block.List, owner_stmt)
 					owner_block.List = InsertStmt(owner_block.List, stmt_index, call_start_stmt)
-					*/
+					//copy(e, call_start_stmt)
+					
 					for _, arg := range x.Args {
 						if typ := ASTCtxt.SrcGoTypeInfo.TypeOf(arg); typ != nil {
 							switch t := typ.(type) {
 								case *types.Array:
 									switch t.Elem().String() {
 										case "char":
-											//"Call_PushStringEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
+											Call_PushString := new(ast.CallExpr)
+											Call_PushString.Fun = ast.NewIdent("Call_PushStringEx")
+											Call_PushString.Args = append(Call_PushString.Args, arg)
+											
+											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
+											
+											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, "1"))
+											
+											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, "2"))
+											
+											Call_PushString_stmt := new(ast.ExprStmt)
+											Call_PushString_stmt.X = Call_PushString
+											owner_block.List = InsertStmt(owner_block.List, stmt_index+1, Call_PushString_stmt)
 										default:
 											//"Call_PushArrayEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
 									}
@@ -630,7 +737,6 @@ func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr)
 							}
 						}
 					}
-					//owner_block.List = owner_block.List[:stmt_index]
 				}
 				//"Call_Finish();")
 			}
