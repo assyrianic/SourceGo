@@ -37,7 +37,7 @@ type (
 	}
 	
 	ClientInfo struct {
-		Clients [MAXPLAYERS+1]Entity
+		Clients [2][MAXPLAYERS+1]Entity
 	}
 	
 	Kektus    func(i, x Vec3, b string, blocks *Name, KC *int)   Handle
@@ -55,7 +55,6 @@ func main() {
 	//var ocpis func(client Entity) = OnClientPutInServer /// => Function ocpis = OnClientPutInServer;
 	
 	var cinfo ClientInfo
-	
 	for _, p1 := range cinfo.Clients {
 		for _, x1 := range p1 {
 		}
@@ -80,6 +79,12 @@ func main() {
 	*/
 	switch x {
 		case 1, 2:
+		default:
+	}
+	
+	switch {
+		case x < 10, x+y < 10.0:
+			
 		default:
 	}
 }

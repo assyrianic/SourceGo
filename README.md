@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.21a
+v0.22a
 
 ## Introduction
 
@@ -50,6 +50,20 @@ Becomes:
 var players [MAXPLAYERS+1]Entity
 for index, player := range players {
 	/// code;
+}
+```
+
+* Switch statements with and without an expression.
+```go
+switch x {
+	case 1, 2:
+	default:
+}
+
+switch {
+	case x < 10, x+y < 10.0:
+		
+	default:
 }
 ```
 
