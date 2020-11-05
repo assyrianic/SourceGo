@@ -396,7 +396,6 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 		/// func f() (int, float) {} => func f(_param1 *float) int {}
 		results := len(f.Type.Results.List)
 		if results > 1 {
-			/// TODO: group together moved var names under their same type if possible.
 			for i:=1; i<results; i++ {
 				ret := f.Type.Results.List[i]
 				/// if they're named, treat as reference types.
@@ -428,8 +427,6 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 	switch n := s.(type) {
 		case *ast.AssignStmt:
-			/// TODO: make sure to check if len(rhs) <= len(lhs).
-			/// also check if rhs is function call expr.
 			left_len := len(n.Lhs)
 			rite_len := len(n.Rhs)
 			funct, is_func_call := n.Rhs[0].(*ast.CallExpr)
@@ -556,7 +553,6 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 			ManageStmtNode(owner_block, n.Init)
 			ManageExprNode(owner_block, s, n.Tag)
 			AnalyzeBlockStmt(n.Body)
-			
 			/** TODO: Switch statements can be "true" aka empty expression
 			 * to work as a more compact if-else-if series:
 			 * 
@@ -613,13 +609,11 @@ func ManageStmtNode(owner_block *ast.BlockStmt, s ast.Stmt) {
 							
 							assign := new(ast.AssignStmt)
 							assign.Lhs = append(assign.Lhs, n.Value)
-							switch access := n.X.(type) {
-								case *ast.IndexExpr, *ast.Ident:
-									get_index := new(ast.IndexExpr)
-									get_index.Index = n.Key
-									get_index.X = access
-									assign.Rhs = append(assign.Rhs, get_index)
-							}
+							
+							get_index := new(ast.IndexExpr)
+							get_index.Index = n.Key
+							get_index.X = n.X
+							assign.Rhs = append(assign.Rhs, get_index)
 							assign.Tok = token.ASSIGN
 							n.Body.List = InsertStmt(n.Body.List, 1, assign)
 							n.Value = nil
@@ -783,11 +777,9 @@ func ManageExprNode(owner_block *ast.BlockStmt, owner_stmt ast.Stmt, e ast.Expr)
 				PrintSrcGoErr(x.Pos(), "Imaginary Numbers are Illegal.")
 			}
 		
-		/// TODO: make as 'view_as< type >(expr)' ?
 		case *ast.TypeAssertExpr:
 			PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
 		case *ast.SliceExpr:
-			/// TODO: make new, local array when slicing?
 			PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
 	}
 }

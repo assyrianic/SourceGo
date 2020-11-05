@@ -36,6 +36,10 @@ type (
 		Weaps [3]Entity
 	}
 	
+	ClientInfo struct {
+		Clients [MAXPLAYERS+1]Entity
+	}
+	
 	Kektus    func(i, x Vec3, b string, blocks *Name, KC *int)   Handle
 	EventFunc func(event Event, name string, dontBroadcast bool) Action
 )
@@ -49,12 +53,14 @@ func IsClientInGame(client Entity) bool
 
 func main() {
 	//var ocpis func(client Entity) = OnClientPutInServer /// => Function ocpis = OnClientPutInServer;
-	var clients [2][MAXPLAYERS+1]Entity
-	for _, p1 := range clients {
+	
+	var cinfo ClientInfo
+	
+	for _, p1 := range cinfo.Clients {
 		for _, x1 := range p1 {
 		}
 	}
-	for _, p2 := range clients {
+	for _, p2 := range cinfo.Clients {
 		for _, x2 := range p2 {
 		}
 	}
@@ -72,4 +78,8 @@ func main() {
 		}
 	}
 	*/
+	switch x {
+		case 1, 2:
+		default:
+	}
 }
