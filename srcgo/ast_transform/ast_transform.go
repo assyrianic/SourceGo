@@ -89,15 +89,12 @@ func GetTypeBase(t types.Type) types.Type {
 	}
 }
 
-/// Turn a value expr into a type expr.
-func ValueToTypeExpr(val ast.Expr) ast.Expr {
+func TypeToASTExpr(typ types.Type) ast.Expr {
 	var type_stack []types.Type
-	typ := ASTCtxt.SrcGoTypeInfo.TypeOf(val);
 	for typ != nil {
 		type_stack = append(type_stack, typ)
 		typ = GetTypeBase(typ)
 	}
-	
 	/// iterate backwards to build the AST
 	x := (ast.Expr)(nil)
 	for i := len(type_stack) - 1; i >= 0; i-- {
@@ -111,6 +108,12 @@ func ValueToTypeExpr(val ast.Expr) ast.Expr {
 		}
 	}
 	return x
+}
+
+/// Turn a value expr into a type expr.
+func ValueToTypeExpr(val ast.Expr) ast.Expr {
+	typ := ASTCtxt.SrcGoTypeInfo.TypeOf(val);
+	return TypeToASTExpr(typ)
 }
 
 func InsertExpr(a []ast.Expr, index int, value ast.Expr) []ast.Expr {
@@ -205,6 +208,36 @@ func MakeIntVar(name string) {
 }
 
 
+func MakeEnumType(name string, names []string, values []int64) {
+	MakeNamedType(name, types.Typ[types.Int], nil)
+	for i, n := range names {
+		MakeIntConst(n, values[i])
+	}
+}
+
+
+func MakeParams(param_names []string, param_types []types.Type) *types.Tuple {
+	var params []*types.Var
+	for i, param := range param_names {
+		params = append(params, types.NewParam(token.NoPos, nil, param, param_types[i]))
+	}
+	return types.NewTuple(params...)
+}
+func MakeRet(param_types []types.Type) *types.Tuple {
+	var rets []*types.Var
+	for _, param := range param_types {
+		rets = append(rets, types.NewParam(token.NoPos, nil, "", param))
+	}
+	return types.NewTuple(rets...)
+}
+
+func MakeFunc(name string, recv *types.Var, params, results *types.Tuple, variadic bool) {
+	sig := types.NewSignature(recv, params, results, variadic)
+	func_ := types.NewFunc(token.NoPos, nil, name, sig)
+	types.Universe.Insert(func_)
+}
+
+
 func AddSrcGoTypes() {
 	/**
 	 * func NewTypeName(pos token.Pos, pkg *Package, name string, typ Type) *TypeName
@@ -219,11 +252,13 @@ func AddSrcGoTypes() {
 	 */
 	ASTCtxt.BuiltnTypes = make(map[string]types.Object)
 	
+	/// Basic types for SourcePawn
 	MakeTypeAlias("char", types.Typ[types.Int8], true)
 	MakeTypeAlias("Entity", types.Typ[types.Int], false)
 	MakeTypeAlias("Address", types.Typ[types.Int], true)
 	MakeTypeAlias("float", types.Typ[types.Float32], false)
 	
+	/// Array types.
 	vec3_array := types.NewArray(types.Typ[types.Float32], 3)
 	vec3_type_name := types.NewTypeName(token.NoPos, nil, "Vec3", vec3_array)
 	types.Universe.Insert(vec3_type_name)
@@ -251,25 +286,21 @@ func AddSrcGoTypes() {
 	types.Universe.Insert(ext_type_name)
 	
 	/// Action
-	MakeNamedType("Action", types.Typ[types.Int], nil)
-	MakeIntConst("Plugin_Continue", 0)
-	MakeIntConst("Plugin_Changed",  1)
-	MakeIntConst("Plugin_Handled",  2)
-	MakeIntConst("Plugin_Stop",     3)
+	MakeEnumType("Action", []string{"Plugin_Continue", "Plugin_Changed", "Plugin_Handled", "Plugin_Stop"}, []int64{0,1,2,3})
 	
-	/// TODO: make it easier to create Handle-based types?
+	/// Handle and derived types.
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("Map",    types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("Array",  types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("Event",  types.Typ[types.UnsafePointer], nil)
 	
-	/// TODO: define methods for the Handle types, Vec3, and Entity.
-	/// also TODO: Add QAngle, AngularImpulse as [3]float like Vec3
-	
 	/// defined constants.
 	MakeIntVar("MaxClients")
 	MakeIntConst("MAXPLAYERS", 65)
 	MakeIntConst("MAXPLAYERS", 2048)
+	
+	/// Functions
+	MakeFunc("IsClientInGame", nil, MakeParams([]string{"client"}, []types.Type{types.Typ[types.Int]}), MakeRet([]types.Type{types.Typ[types.Bool]}), false)
 }
 
 
@@ -460,7 +491,7 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 							for _, name := range val {
 								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
 							}
-							type_expr := MakeIdent(key.String())
+							type_expr := TypeToASTExpr(key)
 							val_spec.Type = type_expr
 							gen_decl.Specs = append(gen_decl.Specs, val_spec)
 						}

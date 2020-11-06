@@ -49,7 +49,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.22a")
+				fmt.Println("SourceGo version: v0.23a")
 			default:
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(file)
@@ -78,6 +78,7 @@ func main() {
 						Selections: make(map[*ast.SelectorExpr]*types.Selection),
 					}
 					
+					//dir, _ := os.Getwd()
 					if _, err := conf.Check("", fset, []*ast.File{f}, info); err != nil {
 						for _, e := range typeErrs {
 							fmt.Println(e) /// type error

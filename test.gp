@@ -49,8 +49,6 @@ func (pi PlayerInfo) GetOrigin(buffer *Vec3) (float,float,float) {
 	return pi.Origin[0], pi.Origin[1], pi.Origin[2] 
 }
 
-func IsClientInGame(client Entity) bool
-
 func main() {
 	//var ocpis func(client Entity) = OnClientPutInServer /// => Function ocpis = OnClientPutInServer;
 	
@@ -66,25 +64,26 @@ func main() {
 	var origin Vec3
 	var p PlayerInfo
 	x,y,z := p.GetOrigin(&origin)
-	/*
-	for i := 1; i<=MaxClients; i++ {
-		if IsClientInGame(i) {
-			
+	
+	is_in_game1 := IsClientInGame(5)
+	
+	/*for i := 1; i<=MaxClients; i++ {
+		is_in_game := IsClientInGame(i)
 			//ocpis(i) /// becomes:
 			/// Call_StartFunction(null, ocpis);
 			/// Call_PushCell(i);
 			/// Call_Finish();
-		}
-	}
-	*/
+	}*/
+	
 	switch x {
 		case 1, 2:
+		case 3:
 		default:
 	}
 	
 	switch {
 		case x < 10, x+y < 10.0:
-			
+		case x * y <= 1024.0:
 		default:
 	}
 }
