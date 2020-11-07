@@ -32,7 +32,7 @@ var (
 		SrcGoTypeInfo *types.Info
 		CurrFunc      *ast.FuncDecl
 		FSet          *token.FileSet
-		BuiltnTypes   map[string]types.Object
+		BuiltInTypes   map[string]types.Object
 		StrDefs       map[string]types.Object
 		Err           func(err error)
 		RangeIter     uint
@@ -187,7 +187,7 @@ func CheckReturnTypes(n ast.Node) bool {
 func MakeTypeAlias(name string, typ types.Type, strong bool) {
 	alias := types.NewTypeName(token.NoPos, nil, name, typ)
 	if strong {
-		ASTCtxt.BuiltnTypes[name] = alias
+		ASTCtxt.BuiltInTypes[name] = alias
 	}
 	types.Universe.Insert(alias)
 }
@@ -196,7 +196,7 @@ func MakeNamedType(name string, typ types.Type, methods []*types.Func) {
 	alias := types.NewTypeName(token.NoPos, nil, name, nil)
 	types.NewNamed(alias, typ, methods)
 	types.Universe.Insert(alias)
-	ASTCtxt.BuiltnTypes[name] = alias
+	ASTCtxt.BuiltInTypes[name] = alias
 }
 
 func MakeIntConst(name string, num int64) {
@@ -250,7 +250,7 @@ func AddSrcGoTypes() {
 	 * 
 	 * NewNamed returns a new named type for the given type name, underlying type, and associated methods. If the given type name obj doesn't have a type yet, its type is set to the returned named type. The underlying type must not be a *Named
 	 */
-	ASTCtxt.BuiltnTypes = make(map[string]types.Object)
+	ASTCtxt.BuiltInTypes = make(map[string]types.Object)
 	
 	/// Basic types for SourcePawn
 	MakeTypeAlias("char", types.Typ[types.Int8], true)
@@ -264,11 +264,11 @@ func AddSrcGoTypes() {
 	types.Universe.Insert(vec3_type_name)
 	
 	plugin_reg_struc := types.NewStruct([]*types.Var{
-		types.NewField(token.NoPos, nil, "Name",        types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "Description", types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "Author",      types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "Version",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "Url",         types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "name",        types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "description", types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "author",      types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "version",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "url",         types.Typ[types.String], false),
 	}, nil)
 	plugin_reg_type_name := types.NewTypeName(token.NoPos, nil, "Plugin", nil)
 	types.NewNamed(plugin_reg_type_name, plugin_reg_struc, nil)
@@ -276,10 +276,10 @@ func AddSrcGoTypes() {
 	
 	/// per request of JoinedSenses.
 	ext_struc := types.NewStruct([]*types.Var{
-		types.NewField(token.NoPos, nil, "Name",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "File",     types.Typ[types.String], false),
-		types.NewField(token.NoPos, nil, "Autoload", types.Typ[types.Int], false),
-		types.NewField(token.NoPos, nil, "Required", types.Typ[types.Int], false),
+		types.NewField(token.NoPos, nil, "name",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "file",     types.Typ[types.String], false),
+		types.NewField(token.NoPos, nil, "autoload", types.Typ[types.Int], false),
+		types.NewField(token.NoPos, nil, "required", types.Typ[types.Int], false),
 	}, nil)
 	ext_type_name := types.NewTypeName(token.NoPos, nil, "Extension", nil)
 	types.NewNamed(ext_type_name, ext_struc, nil)
@@ -306,7 +306,7 @@ func AddSrcGoTypes() {
 
 func AnalyzeFile(f *ast.File, info *types.Info, err_fn func(err error)) {
 	ASTCtxt.SrcGoTypeInfo = info
-	ASTCtxt.StrDefs     = make(map[string]types.Object)
+	ASTCtxt.StrDefs = make(map[string]types.Object)
 	ASTCtxt.Err = err_fn
 	
 	for key, value := range ASTCtxt.SrcGoTypeInfo.Defs {
@@ -462,7 +462,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 	ASTCtxt.RangeIter = 0
 }
 
-func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
+func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 	switch n := s.(type) {
 		case *ast.AssignStmt:
 			left_len := len(n.Lhs)
@@ -497,7 +497,7 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 						}
 						
 						decl_stmt.Decl = gen_decl
-						owner_list = InsertStmt(owner_list, index, decl_stmt)
+						*owner_list = InsertStmt(*owner_list, index, decl_stmt)
 						n.Tok = token.ASSIGN
 						ManageStmtNode(owner_list, index, s)
 					
@@ -568,7 +568,7 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 			
 		case *ast.ReturnStmt:
 			/// change multiple var returns into passing by reference.
-			index := FindStmt(owner_list, s)
+			index := FindStmt(*owner_list, s)
 			res_len := len(n.Results)
 			for i:=1; i<res_len; i++ {
 				ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i)))
@@ -576,7 +576,7 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 				assign.Lhs = append(assign.Lhs, ptr_deref)
 				assign.Tok = token.ASSIGN
 				assign.Rhs = append(assign.Rhs, n.Results[i])
-				owner_list = InsertStmt(owner_list, index, assign)
+				*owner_list = InsertStmt(*owner_list, index, assign)
 				index++
 			}
 			if res_len > 1 {
@@ -594,7 +594,7 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 				ManageExprNode(owner_list, s, expr)
 			}
 			for i, stmt := range n.Body {
-				ManageStmtNode(n.Body, i, stmt)
+				ManageStmtNode(&n.Body, i, stmt)
 			}
 		
 		case *ast.RangeStmt: /// TODO: adapt range statement for ArrayLists and other containers.
@@ -664,12 +664,12 @@ func ManageStmtNode(owner_list []ast.Stmt, index int, s ast.Stmt) {
 
 func AnalyzeBlockStmt(b *ast.BlockStmt) {
 	for i, stmt := range b.List {
-		ManageStmtNode(b.List, i, stmt)
+		ManageStmtNode(&b.List, i, stmt)
 	}
 }
 
 
-func ManageExprNode(owner_list []ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
+func ManageExprNode(owner_list *[]ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
 	switch x := e.(type) {
 		case *ast.IndexExpr:
 			ManageExprNode(owner_list, owner_stmt, x.X)
@@ -708,8 +708,8 @@ func ManageExprNode(owner_list []ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
 					
 					call_start_stmt := new(ast.ExprStmt)
 					call_start_stmt.X = call_start
-					stmt_index := FindStmt(owner_list, owner_stmt)
-					owner_list = InsertStmt(owner_list, stmt_index, call_start_stmt)
+					stmt_index := FindStmt(*owner_list, owner_stmt)
+					*owner_list = InsertStmt(*owner_list, stmt_index, call_start_stmt)
 					//copy(e, call_start_stmt)
 					
 					for _, arg := range x.Args {
@@ -730,7 +730,7 @@ func ManageExprNode(owner_list []ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
 											
 											Call_PushString_stmt := new(ast.ExprStmt)
 											Call_PushString_stmt.X = Call_PushString
-											owner_list = InsertStmt(owner_list, stmt_index+1, Call_PushString_stmt)
+											*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
 										default:
 											//"Call_PushArrayEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
 									}

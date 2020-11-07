@@ -49,7 +49,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.23a")
+				fmt.Println("SourceGo version: v0.24a")
 			default:
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(file)

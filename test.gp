@@ -1,12 +1,13 @@
 package main
 
+
 var (
 	myself = Plugin{
-		Name: "SrcGo Plugin",
-		Author: "Nergal",
-		Description: "Plugin made into SP from SrcGo.",
-		Version: "1.0a",
-		Url: "https://github.com/assyrianic/Go2SourcePawn",
+		name:        "SrcGo Plugin",
+		author:      "Nergal",
+		description: "Plugin made into SP from SrcGo.",
+		version:     "1.0a",
+		url:         "https://github.com/assyrianic/Go2SourcePawn",
 	}
 	str_array = [...]string{
 		"kek",
@@ -55,24 +56,19 @@ func main() {
 	var cinfo ClientInfo
 	for _, p1 := range cinfo.Clients {
 		for _, x1 := range p1 {
+			is_in_game := IsClientInGame(x1)
 		}
 	}
-	for _, p2 := range cinfo.Clients {
-		for _, x2 := range p2 {
-		}
-	}
+	
 	var origin Vec3
 	var p PlayerInfo
 	x,y,z := p.GetOrigin(&origin)
 	
-	is_in_game1 := IsClientInGame(5)
-	
 	/*for i := 1; i<=MaxClients; i++ {
-		is_in_game := IsClientInGame(i)
-			//ocpis(i) /// becomes:
-			/// Call_StartFunction(null, ocpis);
-			/// Call_PushCell(i);
-			/// Call_Finish();
+		//ocpis(i) /// becomes:
+		/// Call_StartFunction(null, ocpis);
+		/// Call_PushCell(i);
+		/// Call_Finish();
 	}*/
 	
 	switch x {
