@@ -11,7 +11,7 @@
  * 
  */
 
-package SrcGo_ASTMod
+package ASTMod
 
 
 import (
@@ -27,17 +27,15 @@ import (
 	"go/constant"
 )
 
-var (
-	ASTCtxt struct {
-		SrcGoTypeInfo *types.Info
-		CurrFunc      *ast.FuncDecl
-		FSet          *token.FileSet
-		BuiltInTypes   map[string]types.Object
-		StrDefs       map[string]types.Object
-		Err           func(err error)
-		RangeIter     uint
-	}
-)
+
+var ASTCtxt struct {
+	TypeInfo      *types.Info
+	CurrFunc      *ast.FuncDecl
+	FSet          *token.FileSet
+	BuiltInTypes  map[string]types.Object
+	Err           func(err error)
+	RangeIter     uint
+}
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
 	ptr := new(ast.StarExpr)
@@ -76,14 +74,10 @@ func GetTypeBase(t types.Type) types.Type {
 	switch t := t.(type) {
 		case *types.Array:
 			return t.Elem()
-		case *types.Named:
-			return nil
 		case *types.Slice:
 			return t.Elem()
 		case *types.Pointer:
 			return t.Elem()
-		case *types.Basic:
-			return nil
 		default:
 			return nil
 	}
@@ -112,7 +106,7 @@ func TypeToASTExpr(typ types.Type) ast.Expr {
 
 /// Turn a value expr into a type expr.
 func ValueToTypeExpr(val ast.Expr) ast.Expr {
-	typ := ASTCtxt.SrcGoTypeInfo.TypeOf(val);
+	typ := ASTCtxt.TypeInfo.TypeOf(val)
 	return TypeToASTExpr(typ)
 }
 
@@ -159,6 +153,33 @@ func FindStmt(a []ast.Stmt, x ast.Stmt) int {
 		}
 	}
 	return -1
+}
+
+func IsFuncPtr(expr ast.Expr) bool {
+	if expr != nil {
+		switch e := expr.(type) {
+			case *ast.SelectorExpr:
+				return IsFuncPtr(e.Sel)
+			case *ast.IndexExpr:
+				return true
+			case *ast.Ident:
+				for k, v := range ASTCtxt.TypeInfo.Defs {
+					if k.Name==e.Name {
+						typ_str := v.String()
+						is_var := strings.Contains(typ_str, "var ") || strings.Contains(typ_str, "field ")
+						if is_var && strings.Contains(typ_str, "func(") {
+							return true
+						}
+					}
+				}
+				return false
+			case *ast.CallExpr:
+				return IsFuncPtr(e.Fun)
+			default:
+				break
+		}
+	}
+	return false
 }
 
 func PrintSrcGoErr(p token.Pos, msg string) {
@@ -209,9 +230,11 @@ func MakeIntVar(name string) {
 
 
 func MakeEnumType(name string, names []string, values []int64) {
-	MakeNamedType(name, types.Typ[types.Int], nil)
+	alias := types.NewTypeName(token.NoPos, nil, name, nil)
+	named := types.NewNamed(alias, types.Typ[types.Int], nil)
+	types.Universe.Insert(alias)
 	for i, n := range names {
-		MakeIntConst(n, values[i])
+		types.Universe.Insert(types.NewConst(token.NoPos, nil, n, named, constant.MakeInt64(values[i])))
 	}
 }
 
@@ -223,6 +246,7 @@ func MakeParams(param_names []string, param_types []types.Type) *types.Tuple {
 	}
 	return types.NewTuple(params...)
 }
+
 func MakeRet(param_types []types.Type) *types.Tuple {
 	var rets []*types.Var
 	for _, param := range param_types {
@@ -253,10 +277,10 @@ func AddSrcGoTypes() {
 	ASTCtxt.BuiltInTypes = make(map[string]types.Object)
 	
 	/// Basic types for SourcePawn
-	MakeTypeAlias("char", types.Typ[types.Int8], true)
-	MakeTypeAlias("Entity", types.Typ[types.Int], false)
+	MakeTypeAlias("char",    types.Typ[types.Int8], true)
+	MakeTypeAlias("Entity",  types.Typ[types.Int], false)
 	MakeTypeAlias("Address", types.Typ[types.Int], true)
-	MakeTypeAlias("float", types.Typ[types.Float32], false)
+	MakeTypeAlias("float",   types.Typ[types.Float32], false)
 	
 	/// Array types.
 	vec3_array := types.NewArray(types.Typ[types.Float32], 3)
@@ -305,13 +329,9 @@ func AddSrcGoTypes() {
 
 
 func AnalyzeFile(f *ast.File, info *types.Info, err_fn func(err error)) {
-	ASTCtxt.SrcGoTypeInfo = info
-	ASTCtxt.StrDefs = make(map[string]types.Object)
+	ASTCtxt.TypeInfo = info
 	ASTCtxt.Err = err_fn
 	
-	for key, value := range ASTCtxt.SrcGoTypeInfo.Defs {
-		ASTCtxt.StrDefs[key.Name] = value
-	}
 	for _, decl := range f.Decls {
 		ManageDeclNode(decl)
 	}
@@ -408,7 +428,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 		} else {
 			/// merge receiver with the params and nullify it.
 			new_params = append(new_params, f.Recv.List[0])
-			if type_expr := ASTCtxt.SrcGoTypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
+			if type_expr := ASTCtxt.TypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
 				type_name := type_expr.String()
 				type_name = strings.Replace(type_name, ".", "_", -1)
 				type_name = strings.Replace(type_name, " ", "_", -1)
@@ -465,8 +485,7 @@ func AnalyzeFuncDecl(f *ast.FuncDecl) {
 func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 	switch n := s.(type) {
 		case *ast.AssignStmt:
-			left_len := len(n.Lhs)
-			rite_len := len(n.Rhs)
+			left_len, rite_len := len(n.Lhs), len(n.Rhs)
 			funct, is_func_call := n.Rhs[0].(*ast.CallExpr)
 			if rite_len==1 && left_len >= rite_len && is_func_call {
 				/// a func call returning multiple items.
@@ -479,7 +498,7 @@ func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 						/// first we get each name of a var and then map them to a type.
 						var_map := make(map[types.Type][]ast.Expr)
 						for _, e := range n.Lhs {
-							if type_expr := ASTCtxt.SrcGoTypeInfo.TypeOf(e); type_expr != nil {
+							if type_expr := ASTCtxt.TypeInfo.TypeOf(e); type_expr != nil {
 								var_map[type_expr] = append(var_map[type_expr], e)
 							} else {
 								PrintSrcGoErr(n.TokPos, "Failed to expand assignments.")
@@ -497,6 +516,8 @@ func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 						}
 						
 						decl_stmt.Decl = gen_decl
+						AnalyzeGenDecl(gen_decl)
+						
 						*owner_list = InsertStmt(*owner_list, index, decl_stmt)
 						n.Tok = token.ASSIGN
 						ManageStmtNode(owner_list, index, s)
@@ -690,72 +711,112 @@ func ManageExprNode(owner_list *[]ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
 			ManageExprNode(owner_list, owner_stmt, x.X)
 		
 		case *ast.CallExpr:
-			/// check for *ast.SelectorExpr
-			if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call {
-				x.Args = InsertExpr(x.Args, 0, caller.X)
-				if typ := ASTCtxt.SrcGoTypeInfo.TypeOf(caller.X); typ != nil {
-					caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
-				}
-				x.Fun = caller.Sel
-			}
-			callid, _ := x.Fun.(*ast.Ident)
-			if obj, found := ASTCtxt.StrDefs[callid.Name]; found && obj != nil {
-				if _, is_fptr := obj.(*types.Var); is_fptr {
-					call_start := new(ast.CallExpr)
-					call_start.Fun = ast.NewIdent("Call_StartFunction")
-					call_start.Args = append(call_start.Args, ast.NewIdent("nil"))
-					call_start.Args = append(call_start.Args, x.Fun)
-					
-					call_start_stmt := new(ast.ExprStmt)
-					call_start_stmt.X = call_start
-					stmt_index := FindStmt(*owner_list, owner_stmt)
-					*owner_list = InsertStmt(*owner_list, stmt_index, call_start_stmt)
-					//copy(e, call_start_stmt)
-					
-					for _, arg := range x.Args {
-						if typ := ASTCtxt.SrcGoTypeInfo.TypeOf(arg); typ != nil {
-							switch t := typ.(type) {
-								case *types.Array:
-									switch t.Elem().String() {
-										case "char":
-											Call_PushString := new(ast.CallExpr)
-											Call_PushString.Fun = ast.NewIdent("Call_PushStringEx")
-											Call_PushString.Args = append(Call_PushString.Args, arg)
-											
-											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
-											
-											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, "1"))
-											
-											Call_PushString.Args = append(Call_PushString.Args, MakeBasicLit(token.INT, "2"))
-											
-											Call_PushString_stmt := new(ast.ExprStmt)
-											Call_PushString_stmt.X = Call_PushString
-											*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
-										default:
-											//"Call_PushArrayEx(%s, sizeof(%s), SM_PARAM_COPYBACK); ", id, id)
-									}
-								case *types.Pointer:
-									switch t.Elem().String() {
-										case "float":
-											//"Call_PushFloatRef(%s); ", GetExprString(arg))
-										default:
-											//"Call_PushCellRef(%s); ", GetExprString(arg))
-									}
-								case *types.Basic:
-									switch t.Name() {
-										case "string":
-											//"Call_PushString(%s); ", GetExprString(arg))
-										case "float", "float32":
-											//"Call_PushFloat(%s); ", GetExprString(arg))
-										default:
-											//"Call_PushCell(%s); ", GetExprString(arg))
-									}
-							}
+			is_fptr := IsFuncPtr(x.Fun)
+			/*
+			if is_fptr {
+				Call_StartFunction := ast.NewIdent("Call_StartFunction")
+				new_args := []ast.Expr{ast.NewIdent("nil"), x.Fun}
+				
+				//call_start_stmt := new(ast.ExprStmt)
+				//call_start_stmt.X = Call_StartFunction
+				stmt_index := FindStmt(*owner_list, owner_stmt)
+				x.Fun = Call_StartFunction
+				//*owner_list = InsertStmt(*owner_list, stmt_index, call_start_stmt)
+				
+				for _, arg := range x.Args {
+					if typ := ASTCtxt.TypeInfo.TypeOf(arg); typ != nil {
+						switch t := typ.(type) {
+							case *types.Array:
+								switch t.Elem().String() {
+									case "char":
+										Call_PushStringEx := new(ast.CallExpr)
+										Call_PushStringEx.Fun = ast.NewIdent("Call_PushStringEx")
+										Call_PushStringEx.Args = append(Call_PushStringEx.Args, arg)
+										
+										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
+										
+										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "1"))
+										
+										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "2"))
+										
+										Call_PushString_stmt := new(ast.ExprStmt)
+										Call_PushString_stmt.X = Call_PushStringEx
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
+									default:
+										Call_PushArrayEx := new(ast.CallExpr)
+										Call_PushArrayEx.Fun = ast.NewIdent("Call_PushArrayEx")
+										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, arg)
+										
+										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
+										
+										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, "1"))
+										
+										Call_PushArrayEx_stmt := new(ast.ExprStmt)
+										Call_PushArrayEx_stmt.X = Call_PushArrayEx
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushArrayEx_stmt)
+								}
+							case *types.Pointer:
+								switch t.Elem().String() {
+									case "float":
+										Call_PushFloatRef := new(ast.CallExpr)
+										Call_PushFloatRef.Fun = ast.NewIdent("Call_PushFloatRef")
+										Call_PushFloatRef.Args = append(Call_PushFloatRef.Args, arg)
+										
+										Call_PushFloatRef_stmt := new(ast.ExprStmt)
+										Call_PushFloatRef_stmt.X = Call_PushFloatRef
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushFloatRef_stmt)
+									default:
+										Call_PushCellRef := new(ast.CallExpr)
+										Call_PushCellRef.Fun = ast.NewIdent("Call_PushCellRef")
+										Call_PushCellRef.Args = append(Call_PushCellRef.Args, arg)
+										
+										Call_PushCellRef_stmt := new(ast.ExprStmt)
+										Call_PushCellRef_stmt.X = Call_PushCellRef
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushCellRef_stmt)
+								}
+							case *types.Basic:
+								switch t.Name() {
+									case "string":
+										Call_PushString := new(ast.CallExpr)
+										Call_PushString.Fun = ast.NewIdent("Call_PushString")
+										Call_PushString.Args = append(Call_PushString.Args, arg)
+										
+										Call_PushString_stmt := new(ast.ExprStmt)
+										Call_PushString_stmt.X = Call_PushString
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
+									case "float", "float32":
+										Call_PushFloat := new(ast.CallExpr)
+										Call_PushFloat.Fun = ast.NewIdent("Call_PushFloat")
+										Call_PushFloat.Args = append(Call_PushFloat.Args, arg)
+										
+										Call_PushFloat_stmt := new(ast.ExprStmt)
+										Call_PushFloat_stmt.X = Call_PushFloat
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushFloat_stmt)
+									default:
+										//"Call_PushCell(%s); ", GetExprString(arg))
+										Call_PushCell := new(ast.CallExpr)
+										Call_PushCell.Fun = ast.NewIdent("Call_PushCell")
+										Call_PushCell.Args = append(Call_PushCell.Args, arg)
+										
+										Call_PushCell_stmt := new(ast.ExprStmt)
+										Call_PushCell_stmt.X = Call_PushCell
+										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushCell_stmt)
+								}
 						}
 					}
 				}
 				//"Call_Finish();")
+				x.Args = new_args
+			}*/
+			if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call && !is_fptr {
+				/// check for *ast.SelectorExpr
+				x.Args = InsertExpr(x.Args, 0, caller.X)
+				if typ := ASTCtxt.TypeInfo.TypeOf(caller.X); typ != nil {
+					caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
+				}
+				x.Fun = caller.Sel
 			}
+			
 			ManageExprNode(owner_list, owner_stmt, x.Fun)
 			for _, arg := range x.Args {
 				ManageExprNode(owner_list, owner_stmt, arg)
@@ -806,6 +867,17 @@ func ManageExprNode(owner_list *[]ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
 	}
 }
 
+func PrintNode(n ast.Node) string {
+	var ast_str string
+	ast.Inspect(n, func(n ast.Node) bool {
+		if n != nil {
+			ast_str += fmt.Sprintf("%p - %T:\t\t%+v", n, n, n) + "\n"
+		}
+		return true
+	})
+	return ast_str
+}
+
 func PrintAST(f *ast.File) string {
 	var ast_str string
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -817,7 +889,7 @@ func PrintAST(f *ast.File) string {
 	return ast_str
 }
 
-func PrettyPrintAST(f *ast.File) string {
+func PrettyPrintAST(f ast.Node) string {
 	fset := token.NewFileSet()
 	var buf bytes.Buffer
 	err := format.Node(&buf, fset, f)

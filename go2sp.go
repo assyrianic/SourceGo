@@ -37,7 +37,7 @@ const (
 
 func main() {
 	files := os.Args[1:]
-	SrcGo_ASTMod.AddSrcGoTypes()
+	ASTMod.AddSrcGoTypes()
 	var opts int
 	for _, file := range files {
 		var bad_compile bool
@@ -49,7 +49,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.24a")
+				fmt.Println("SourceGo version: v0.25a")
 			default:
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(file)
@@ -85,10 +85,14 @@ func main() {
 						}
 						bad_compile = true
 					}
-					SrcGo_ASTMod.ASTCtxt.FSet = fset
-					SrcGo_ASTMod.AnalyzeFile(f, info, func(err error) {
+					ASTMod.ASTCtxt.FSet = fset
+					ASTMod.AnalyzeFile(f, info, func(err error) {
 						transpileErrs = append(transpileErrs, err)
 					})
+					
+					if !bad_compile {
+						bad_compile = len(transpileErrs) > 0
+					}
 					for _, e := range transpileErrs {
 						fmt.Println(e)
 					}
@@ -96,15 +100,15 @@ func main() {
 					/// do second type check.
 					conf.Check("", fset, []*ast.File{f}, info)
 					if (opts & Flag_Debug) > 0 {
-						WriteToFile(fmt.Sprintf("%s_AST.txt", file), SrcGo_ASTMod.PrintAST(f))
-						WriteToFile(fmt.Sprintf("%s_ASTCode.txt", file), SrcGo_ASTMod.PrettyPrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_AST.txt", file), ASTMod.PrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_ASTCode.txt", file), ASTMod.PrettyPrintAST(f))
 					}
 				}
 				new_file_name := fmt.Sprintf("%s.sp", file)
 				if bad_compile && (opts & Flag_Force)==0 {
 					fmt.Println(fmt.Sprintf("SourceGo: file '%s' generation FAILED.", new_file_name))
 				} else {
-					final_code := SrcGoSPGen.GenSPFile(f)
+					final_code := GoToSPGen.GenSPFile(f)
 					WriteToFile(file + ".sp", final_code)
 					if bad_compile {
 						fmt.Println("SourceGo: transpiled " + new_file_name + " but might need correction.")

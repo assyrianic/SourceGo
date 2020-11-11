@@ -1,6 +1,5 @@
 package main
 
-
 var (
 	myself = Plugin{
 		name:        "SrcGo Plugin",
@@ -35,14 +34,15 @@ type (
 		Origin Vec3
 		Angle QAngle
 		Weaps [3]Entity
+		PutInServer func(client Entity)
 	}
 	
 	ClientInfo struct {
 		Clients [2][MAXPLAYERS+1]Entity
 	}
 	
-	Kektus    func(i, x Vec3, b string, blocks *Name, KC *int)   Handle
-	EventFunc func(event Event, name string, dontBroadcast bool) Action
+	Kektus    func(i, x  Vec3,  b    string, blocks        *Name, KC *int) Handle
+	EventFunc func(event Event, name string, dontBroadcast bool)           Action
 )
 
 func (pi PlayerInfo) GetOrigin(buffer *Vec3) (float,float,float) {
@@ -50,9 +50,9 @@ func (pi PlayerInfo) GetOrigin(buffer *Vec3) (float,float,float) {
 	return pi.Origin[0], pi.Origin[1], pi.Origin[2] 
 }
 
+func GetFuncByName(name string) func(client Entity)
+
 func main() {
-	//var ocpis func(client Entity) = OnClientPutInServer /// => Function ocpis = OnClientPutInServer;
-	
 	var cinfo ClientInfo
 	for _, p1 := range cinfo.Clients {
 		for _, x1 := range p1 {
@@ -60,26 +60,19 @@ func main() {
 		}
 	}
 	
-	var origin Vec3
 	var p PlayerInfo
+	var origin Vec3
 	x,y,z := p.GetOrigin(&origin)
 	
-	/*for i := 1; i<=MaxClients; i++ {
-		//ocpis(i) /// becomes:
-		/// Call_StartFunction(null, ocpis);
-		/// Call_PushCell(i);
-		/// Call_Finish();
-	}*/
-	
-	switch x {
-		case 1, 2:
-		case 3:
-		default:
+	p.PutInServer = OnClientPutInServer
+	for i := 1; i<=MaxClients; i++ {
+		//p.PutInServer(i) /// in progress...
+		Call_StartFunction(nil, p.PutInServer);
+		Call_PushCell(i);
+		Call_Finish();
 	}
+}
+
+func OnClientPutInServer(client Entity) {
 	
-	switch {
-		case x < 10, x+y < 10.0:
-		case x * y <= 1024.0:
-		default:
-	}
 }
