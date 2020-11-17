@@ -25,6 +25,7 @@ import (
 	"go/importer"
 	"go/types"
 	"go/ast"
+	//"runtime/debug"
 	"./srcgo/ast_transform"
 	"./srcgo/ast_to_sp"
 )
@@ -49,11 +50,12 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.25a")
+				fmt.Println("SourceGo version: v0.26a")
 			default:
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(file)
 				CheckErr(err1)
+				/// parse the file and get a File AST Node.
 				f, err2 := parser.ParseFile(fset, file, code, parser.AllErrors /*| parser.ParseComments*/)
 				if err2 != nil {
 					for _, e := range err2.(scanner.ErrorList) {
@@ -61,6 +63,13 @@ func main() {
 					}
 					bad_compile = true
 				} else {
+					/*defer func() {
+						if err := recover(); err != nil {
+							fmt.Printf("RECOVERY: %T - %+v\n", err, err)
+							//debug.PrintStack()
+							//ast.Print(fset, f)
+						}
+					}()*/
 					var typeErrs, transpileErrs []error
 					conf := types.Config{
 						Importer: importer.Default(),
@@ -78,17 +87,35 @@ func main() {
 						Selections: make(map[*ast.SelectorExpr]*types.Selection),
 					}
 					
-					//dir, _ := os.Getwd()
+					/// Do initial type-check of the File AST Node so we can get type information.
 					if _, err := conf.Check("", fset, []*ast.File{f}, info); err != nil {
 						for _, e := range typeErrs {
-							fmt.Println(e) /// type error
+							fmt.Println(e)
 						}
 						bad_compile = true
 					}
-					ASTMod.ASTCtxt.FSet = fset
-					ASTMod.AnalyzeFile(f, info, func(err error) {
+					
+					/// initialize our transpiler.
+					ASTMod.SetUpSrcGo(fset, info, func(err error) {
 						transpileErrs = append(transpileErrs, err)
 					})
+					
+					/// first step: Analyze for illegal golang constructs.
+					if !bad_compile {
+						bad_compile = ASTMod.AnalyzeIllegalCode(f)
+					}
+					
+					ASTMod.MergeRecvrs(f)
+					ASTMod.MergeRetVals(f)
+					ASTMod.MergeMethodCalls(f)
+					
+					ASTMod.MutateAndNotExpr(f)
+					
+					ASTMod.MutateRets(f)
+					ASTMod.MutateAssigns(f)
+					
+					ASTMod.MutateRanges(f)
+					ASTMod.MutateNoRetCalls(f)
 					
 					if !bad_compile {
 						bad_compile = len(transpileErrs) > 0
@@ -97,11 +124,10 @@ func main() {
 						fmt.Println(e)
 					}
 					
-					/// do second type check.
 					conf.Check("", fset, []*ast.File{f}, info)
 					if (opts & Flag_Debug) > 0 {
-						WriteToFile(fmt.Sprintf("%s_AST.txt", file), ASTMod.PrintAST(f))
-						WriteToFile(fmt.Sprintf("%s_ASTCode.txt", file), ASTMod.PrettyPrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_AST.txt",   file), ASTMod.PrintAST(f))
+						WriteToFile(fmt.Sprintf("%s_output.go", file), ASTMod.PrettyPrintAST(f))
 					}
 				}
 				new_file_name := fmt.Sprintf("%s.sp", file)

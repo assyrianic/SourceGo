@@ -34,7 +34,7 @@ var ASTCtxt struct {
 	FSet          *token.FileSet
 	BuiltInTypes  map[string]types.Object
 	Err           func(err error)
-	RangeIter     uint
+	RangeIter,TmpVar uint
 }
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
@@ -57,17 +57,66 @@ func MakeBasicLit(tok token.Token, value string) *ast.BasicLit {
 	return bl
 }
 
-func MakeIdent(n string) *ast.Ident {
-	id := new(ast.Ident)
-	id.Name = n
-	return id
-}
-
 func Arrayify(typ ast.Expr, len ast.Expr) *ast.ArrayType {
 	a := new(ast.ArrayType)
 	a.Len = len
 	a.Elt = typ
 	return a
+}
+
+func MakeIndex(index, x ast.Expr) *ast.IndexExpr {
+	i := new(ast.IndexExpr)
+	i.Index = index
+	i.X = x
+	return i
+}
+
+
+func MakeAssign(create bool) *ast.AssignStmt {
+	assign := new(ast.AssignStmt)
+	assign.TokPos = token.NoPos
+	if create {
+		assign.Tok = token.DEFINE
+	} else {
+		assign.Tok = token.ASSIGN
+	}
+	return assign
+}
+
+
+func MakeVarDecl(names []*ast.Ident, val ast.Expr, typ types.Type) *ast.DeclStmt {
+	decl_stmt := new(ast.DeclStmt)
+	gen_decl := new(ast.GenDecl)
+	gen_decl.Tok = token.VAR
+	gen_decl.Lparen = token.NoPos
+	
+	val_spec := new(ast.ValueSpec)
+	for _, name := range names {
+		val_spec.Names = append(val_spec.Names, name)
+	}
+	if val != nil {
+		val_spec.Type = ValueToTypeExpr(val)
+	} else {
+		val_spec.Type = TypeToASTExpr(typ)
+	}
+	gen_decl.Specs = append(gen_decl.Specs, val_spec)
+	
+	decl_stmt.Decl = gen_decl
+	return decl_stmt
+}
+
+
+func MakeBitNotExpr(e ast.Expr) *ast.UnaryExpr {
+	u := new(ast.UnaryExpr)
+	u.Op = token.XOR
+	u.X = e
+	return u
+}
+
+func MakeParenExpr(e ast.Expr) *ast.ParenExpr {
+	p := new(ast.ParenExpr)
+	p.X = e
+	return p
 }
 
 func GetTypeBase(t types.Type) types.Type {
@@ -98,7 +147,7 @@ func TypeToASTExpr(typ types.Type) ast.Expr {
 			case *types.Pointer:
 				x = PtrizeExpr(x)
 			case *types.Basic, *types.Named:
-				x = MakeIdent(t.String())
+				x = ast.NewIdent(t.String())
 		}
 	}
 	return x
@@ -155,6 +204,58 @@ func FindStmt(a []ast.Stmt, x ast.Stmt) int {
 	return -1
 }
 
+func FindParam(fn *ast.FuncDecl, name string) (*ast.Field, int) {
+	for _, field := range fn.Type.Params.List {
+		for i, iden := range field.Names {
+			if iden.Name==name {
+				return field, i
+			}
+		}
+	}
+	return nil, 0
+}
+
+/**
+ * Modifies the return values of a function by mutating them into references and moving them to the parameters.
+ * Example Go code: func f() (int, float) {}
+ * Result  Go code: func f(f_param1 *float) int {}
+ */
+func MutateRetTypes(retvals, curr_params *ast.FieldList, obj_name string) []*ast.Field {
+	if retvals==nil || retvals.List==nil {
+		return curr_params.List
+	}
+	
+	new_params := make([]*ast.Field, 0)
+	for _, param := range curr_params.List {
+		new_params = append(new_params, param)
+	}
+	
+	results := len(retvals.List)
+	
+	/// multiple different return values.
+	if results > 1 {
+		for i, ret := range retvals.List[1:] {
+			/// if they're named, treat as reference types.
+			if ret.Names != nil && len(ret.Names) > 1 {
+				ret.Type = PtrizeExpr(ret.Type)
+				new_params = append(new_params, ret)
+			} else {
+				//param_num := len(new_params)
+				ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("%s_param%d", obj_name, i)))
+				ret.Type = PtrizeExpr(ret.Type)
+				new_params = append(new_params, ret)
+			}
+		}
+		retvals.List = retvals.List[:1]
+	} else if results==1 && retvals.List[0].Names != nil && len(retvals.List[0].Names) > 1 {
+		/// This condition can happen if there's multiple return values of the same type but they're named!
+		retvals.List[0].Type = PtrizeExpr(retvals.List[0].Type)
+		new_params = append(new_params, retvals.List[0])
+		retvals.List = nil
+	}
+	return new_params
+}
+
 func IsFuncPtr(expr ast.Expr) bool {
 	if expr != nil {
 		switch e := expr.(type) {
@@ -186,24 +287,6 @@ func PrintSrcGoErr(p token.Pos, msg string) {
 	ASTCtxt.Err(errors.New("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg))
 }
 
-func CheckReturnTypes(n ast.Node) bool {
-	var list *ast.FieldList
-	switch f := n.(type) {
-		case *ast.FuncDecl:
-			list = f.Type.Results
-		case *ast.FuncType:
-			list = f.Results
-	}
-	if list != nil {
-		for i, ret := range list.List {
-			if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
-				PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed." + fmt.Sprintf(" Param %d is a pointer", i))
-				return false
-			}
-		}
-	}
-	return true
-}
 
 func MakeTypeAlias(name string, typ types.Type, strong bool) {
 	alias := types.NewTypeName(token.NoPos, nil, name, typ)
@@ -327,168 +410,577 @@ func AddSrcGoTypes() {
 	MakeFunc("IsClientInGame", nil, MakeParams([]string{"client"}, []types.Type{types.Typ[types.Int]}), MakeRet([]types.Type{types.Typ[types.Bool]}), false)
 }
 
-
-func AnalyzeFile(f *ast.File, info *types.Info, err_fn func(err error)) {
+func SetUpSrcGo(fset *token.FileSet, info *types.Info, err_fn func(err error)) {
 	ASTCtxt.TypeInfo = info
 	ASTCtxt.Err = err_fn
-	
-	for _, decl := range f.Decls {
-		ManageDeclNode(decl)
-	}
+	ASTCtxt.FSet = fset
 }
 
 
-/** Top Level of the Grammar
- * There's 4 types of nodes in Golang and their hierarchy:
- * 
- * Decl (Declaration) nodes.
- * Spec (Specification) nodes.
- * Stmt (Statement) nodes.
- * Expr (Expression) nodes.
- */
-
-func ManageDeclNode(d ast.Decl) {
-	switch decl := d.(type) {
-		case *ast.GenDecl:
-			AnalyzeGenDecl(decl)
-		case *ast.FuncDecl:
-			AnalyzeFuncDecl(decl)
-	}
-}
-
-/// Generic Declaration Node
-func AnalyzeGenDecl(g *ast.GenDecl) {
-	for _, spec := range g.Specs {
-		switch s := spec.(type) {
-			case *ast.ImportSpec:
-			case *ast.ValueSpec:
-				for _, n := range s.Names {
-					ManageExprNode(nil, nil, n)
-				}
-				ManageExprNode(nil, nil, s.Type)
-				for _, e := range s.Values {
-					ManageExprNode(nil, nil, e)
-				}
-			
-			case *ast.TypeSpec:
-				ManageExprNode(nil, nil, s.Name)
-				/// make sure struct fields are not pointers or slices.
-				switch t := s.Type.(type) {
-					case *ast.StructType:
-						if !t.Incomplete {
-							for _, f := range t.Fields.List {
-								switch t := f.Type.(type) {
-									case *ast.StarExpr:
-										PrintSrcGoErr(t.Pos(), "Pointers are not allowed in Structs.")
-									case *ast.ArrayType:
-										if t.Len==nil {
-											PrintSrcGoErr(t.Pos(), "Arrays of unknown size are not allowed in Structs.")
-										}
-								}
+func AnalyzeIllegalCode(file *ast.File) bool {
+	res := true
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch x := n.(type) {
+				case *ast.FuncDecl:
+					if x.Recv != nil && len(x.Recv.List) > 1 {
+						PrintSrcGoErr(x.Pos(), "Multiple Receivers are not allowed.")
+						res = false
+					}
+					if x.Type.Results != nil {
+						for _, ret := range x.Type.Results.List {
+							if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+								PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed." + fmt.Sprintf(" Param %v is of pointer type", ret.Names))
+								res = false
 							}
 						}
+					}
 					
-					case *ast.FuncType:
-						if t.Results != nil && len(t.Results.List) > 1 {
-							/// too many return values, add them as pointer params!
-							results := len(t.Results.List)
-							for i:=1; i<results; i++ {
-								ret := t.Results.List[i]
-								/// if they're named, treat as reference types.
-								if ret.Names != nil && len(ret.Names) > 1 {
-									ret.Type = PtrizeExpr(ret.Type)
-									t.Params.List = append(t.Params.List, ret)
-								} else {
-									ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("%s_param%d", s.Name.Name, i)))
-									ret.Type = PtrizeExpr(ret.Type)
-									t.Params.List = append(t.Params.List, ret)
-								}
+				case *ast.FuncType:
+					if x.Results != nil {
+						for _, ret := range x.Results.List {
+							if ptr, is_ptr := ret.Type.(*ast.StarExpr); is_ptr {
+								PrintSrcGoErr(ptr.Pos(), "Returning Pointers isn't Allowed." + fmt.Sprintf(" Param %v is of pointer type", ret.Names))
+								res = false
 							}
-							t.Results.List = t.Results.List[:1]
-						} else if len(t.Results.List)==1 && t.Results.List[0].Names != nil && len(t.Results.List[0].Names) > 1 {
-							t.Results.List[0].Type = PtrizeExpr(t.Results.List[0].Type)
-							t.Params.List = append(t.Params.List, t.Results.List[0])
-							t.Results = nil
 						}
-					
-					/// TODO: make interface compile to a typeset?
-					case *ast.InterfaceType:
-				}
-		}
-	}
-}
-
-
-func AnalyzeFuncDecl(f *ast.FuncDecl) {
-	ASTCtxt.CurrFunc = f
-	new_params := make([]*ast.Field, 0)
-	if f.Recv != nil {
-		if len(f.Recv.List) > 1 {
-			PrintSrcGoErr(f.Pos(), "Multiple Receiver Params are not allowed in Functions.")
-		} else {
-			/// merge receiver with the params and nullify it.
-			new_params = append(new_params, f.Recv.List[0])
-			if type_expr := ASTCtxt.TypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
-				type_name := type_expr.String()
-				type_name = strings.Replace(type_name, ".", "_", -1)
-				type_name = strings.Replace(type_name, " ", "_", -1)
+					}
 				
-				type_name = strings.TrimFunc(type_name, func(r rune) bool {
-					return !unicode.IsLetter(r) && r != rune('_')
-				})
-				f.Name.Name = type_name + "_" + f.Name.Name
+				case *ast.StructType:
+					for _, f := range x.Fields.List {
+						switch t := f.Type.(type) {
+							case *ast.StarExpr:
+								PrintSrcGoErr(t.Pos(), "Pointers are not allowed in Structs.")
+								res = false
+							case *ast.ArrayType:
+								if t.Len==nil {
+									PrintSrcGoErr(t.Pos(), "Arrays of unknown size are not allowed in Structs.")
+								}
+								res = false
+						}
+					}
+				case *ast.BranchStmt:
+					if x.Tok==token.GOTO || x.Tok==token.FALLTHROUGH {
+						PrintSrcGoErr(x.Pos(), fmt.Sprintf(" %s is Illegal.", x.Tok.String()))
+						res = false
+					} else if x.Label != nil {
+						PrintSrcGoErr(x.Pos(), "Branched Labels are Illegal.")
+						res = false
+					}
+				
+				case *ast.CommClause:
+					PrintSrcGoErr(x.Pos(), "Comm Select Cases are Illegal.")
+					res = false
+				case *ast.DeferStmt:
+					PrintSrcGoErr(x.Pos(), "Defer Statements are Illegal.")
+					res = false
+				case *ast.TypeSwitchStmt:
+					PrintSrcGoErr(x.Pos(), "Type-Switches are Illegal.")
+					res = false
+				case *ast.LabeledStmt:
+					PrintSrcGoErr(x.Pos(), "Labels are Illegal.")
+					res = false
+				case *ast.GoStmt:
+					PrintSrcGoErr(x.Pos(), "Goroutines are Illegal.")
+					res = false
+				case *ast.SelectStmt:
+					PrintSrcGoErr(x.Pos(), "Select Statements are Illegal.")
+					res = false
+				case *ast.SendStmt:
+					PrintSrcGoErr(x.Pos(), "Send Statements are Illegal.")
+					res = false
+				
+				case *ast.BasicLit:
+					if x.Kind==token.IMAG {
+						PrintSrcGoErr(x.Pos(), "Imaginary Numbers are Illegal.")
+						res = false
+					}
+				case *ast.TypeAssertExpr:
+					PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
+					res = false
+				case *ast.SliceExpr:
+					PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
+					res = false
 			}
-			f.Recv = nil
+		}
+		return true
+	})
+	return res
+}
+
+func MergeRecvrs(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch f := n.(type) {
+				case *ast.FuncDecl:
+					/// merge receiver with the params and nullify it.
+					if f.Recv != nil {
+						f.Type.Params.List = append(f.Type.Params.List[:1], f.Type.Params.List[0:]...)
+						f.Type.Params.List[0] = f.Recv.List[0]
+						if type_expr := ASTCtxt.TypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
+							type_name := type_expr.String()
+							type_name = strings.Replace(type_name, ".", "_", -1)
+							type_name = strings.Replace(type_name, " ", "_", -1)
+							
+							type_name = strings.TrimFunc(type_name, func(r rune) bool {
+								return !unicode.IsLetter(r) && r != rune('_')
+							})
+							f.Name.Name = type_name + "_" + f.Name.Name
+						}
+						f.Recv = nil
+					}
+			}
+		}
+		return true
+	})
+}
+
+func MergeRetVals(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch f := n.(type) {
+				case *ast.FuncDecl:
+					f.Type.Params.List = MutateRetTypes(f.Type.Results, f.Type.Params, f.Name.Name)
+				case *ast.TypeSpec:
+					if t, is_func_type := f.Type.(*ast.FuncType); is_func_type {
+						t.Params.List = MutateRetTypes(t.Results, t.Params, f.Name.Name)
+					}
+			}
+		}
+		return true
+	})
+}
+
+func MakeFuncPtrArgCall(arg ast.Expr, by_ref bool, pretyp types.Type) *ast.ExprStmt {
+	var typ types.Type
+	if typ = ASTCtxt.TypeInfo.TypeOf(arg); typ == nil && pretyp != nil {
+		typ = pretyp
+	}
+	switch t := typ.(type) {
+		case *types.Array:
+			switch t.Elem().String() {
+				case "char":
+					Call_PushStringEx := new(ast.CallExpr)
+					Call_PushStringEx.Fun = ast.NewIdent("Call_PushStringEx")
+					Call_PushStringEx.Args = append(Call_PushStringEx.Args, arg)
+					
+					Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
+					
+					Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "1"))
+					
+					Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "2"))
+					
+					Call_PushString_stmt := new(ast.ExprStmt)
+					Call_PushString_stmt.X = Call_PushStringEx
+					return Call_PushString_stmt
+				default:
+					Call_PushArrayEx := new(ast.CallExpr)
+					Call_PushArrayEx.Fun = ast.NewIdent("Call_PushArrayEx")
+					Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, arg)
+					
+					Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
+					
+					Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, "1"))
+					
+					Call_PushArrayEx_stmt := new(ast.ExprStmt)
+					Call_PushArrayEx_stmt.X = Call_PushArrayEx
+					return Call_PushArrayEx_stmt
+			}
+		case *types.Pointer:
+			switch t.Elem().String() {
+				case "float":
+					Call_PushFloatRef := new(ast.CallExpr)
+					Call_PushFloatRef.Fun = ast.NewIdent("Call_PushFloatRef")
+					if by_ref {
+						Call_PushFloatRef.Args = append(Call_PushFloatRef.Args, MakeReference(arg))
+					} else {
+						Call_PushFloatRef.Args = append(Call_PushFloatRef.Args, arg)
+					}
+					
+					Call_PushFloatRef_stmt := new(ast.ExprStmt)
+					Call_PushFloatRef_stmt.X = Call_PushFloatRef
+					return Call_PushFloatRef_stmt
+				default:
+					Call_PushCellRef := new(ast.CallExpr)
+					Call_PushCellRef.Fun = ast.NewIdent("Call_PushCellRef")
+					if by_ref {
+						Call_PushCellRef.Args = append(Call_PushCellRef.Args, MakeReference(arg))
+					} else {
+						Call_PushCellRef.Args = append(Call_PushCellRef.Args, arg)
+					}
+					
+					Call_PushCellRef_stmt := new(ast.ExprStmt)
+					Call_PushCellRef_stmt.X = Call_PushCellRef
+					return Call_PushCellRef_stmt
+			}
+		case *types.Basic:
+			switch t.Name() {
+				case "string":
+					Call_PushString := new(ast.CallExpr)
+					Call_PushString.Fun = ast.NewIdent("Call_PushString")
+					Call_PushString.Args = append(Call_PushString.Args, arg)
+					
+					Call_PushString_stmt := new(ast.ExprStmt)
+					Call_PushString_stmt.X = Call_PushString
+					return Call_PushString_stmt
+				case "float", "float32":
+					Call_PushFloat := new(ast.CallExpr)
+					if by_ref {
+						Call_PushFloat.Fun = ast.NewIdent("Call_PushFloatRef")
+						Call_PushFloat.Args = append(Call_PushFloat.Args, MakeReference(arg))
+					} else {
+						Call_PushFloat.Fun = ast.NewIdent("Call_PushFloat")
+						Call_PushFloat.Args = append(Call_PushFloat.Args, arg)
+					}
+					Call_PushFloat_stmt := new(ast.ExprStmt)
+					Call_PushFloat_stmt.X = Call_PushFloat
+					return Call_PushFloat_stmt
+				default:
+					Call_PushCell := new(ast.CallExpr)
+					if by_ref {
+						Call_PushCell.Fun = ast.NewIdent("Call_PushCellRef")
+						Call_PushCell.Args = append(Call_PushCell.Args, MakeReference(arg))
+					} else {
+						Call_PushCell.Fun = ast.NewIdent("Call_PushCell")
+						Call_PushCell.Args = append(Call_PushCell.Args, arg)
+					}
+					Call_PushCell_stmt := new(ast.ExprStmt)
+					Call_PushCell_stmt.X = Call_PushCell
+					return Call_PushCell_stmt
+			}
+	}
+	return nil
+}
+
+func ExpandFuncPtrCalls(x *ast.CallExpr, retvals []ast.Expr, retTypes []types.Type) []ast.Stmt {
+	new_stmts := make([]ast.Stmt, 0)
+	Call_StartFunction := new(ast.CallExpr)
+	Call_StartFunction.Fun = ast.NewIdent("Call_StartFunction")
+	Call_StartFunction.Args = append(Call_StartFunction.Args, ast.NewIdent("nil"))
+	Call_StartFunction.Args = append(Call_StartFunction.Args, x.Fun)
+	
+	Call_StartFunction_stmt := new(ast.ExprStmt)
+	Call_StartFunction_stmt.X = Call_StartFunction
+	new_stmts = append(new_stmts, Call_StartFunction_stmt)
+	
+	for _, arg := range x.Args {
+		if func_call := MakeFuncPtrArgCall(arg, false, nil); func_call != nil {
+			new_stmts = append(new_stmts, func_call)
 		}
 	}
 	
-	for _, param := range f.Type.Params.List {
-		new_params = append(new_params, param)
-	}
-	
-	if f.Type.Results != nil {
-		if !CheckReturnTypes(f) {
-			return
+	if retvals != nil && len(retvals) > 0 {
+		rets := len(retvals)
+		for i:=1; i<rets; i++ {
+			_, is_ptr := retvals[i].(*ast.StarExpr)
+			func_call := MakeFuncPtrArgCall(retvals[i], !is_ptr, nil)
+			if func_call != nil {
+				new_stmts = append(new_stmts, func_call)
+			} else if retTypes != nil {
+				func_call = MakeFuncPtrArgCall(retvals[i], !is_ptr, retTypes[i])
+				new_stmts = append(new_stmts, func_call)
+			}
+		}
+		Call_Finish := new(ast.CallExpr)
+		Call_Finish.Fun = ast.NewIdent("Call_Finish")
+		
+		var retval_type ast.Expr
+		if field, _ := FindParam(ASTCtxt.CurrFunc, retvals[0].(*ast.Ident).Name); field != nil {
+			retval_type = field.Type
 		}
 		
-		/// func f() (int, float) {} => func f(_param1 *float) int {}
-		results := len(f.Type.Results.List)
-		if results > 1 {
-			for i:=1; i<results; i++ {
-				ret := f.Type.Results.List[i]
-				/// if they're named, treat as reference types.
-				if ret.Names != nil && len(ret.Names) > 1 {
-					ret.Type = PtrizeExpr(ret.Type)
-					new_params = append(new_params, ret)
-				} else {
-					ret.Names = append(ret.Names, ast.NewIdent(fmt.Sprintf("%s_param%d", f.Name.Name, i)))
-					ret.Type = PtrizeExpr(ret.Type)
-					new_params = append(new_params, ret)
-				}
-			}
-			f.Type.Results.List = f.Type.Results.List[:1]
-		} else if results==1 && f.Type.Results.List[0].Names != nil && len(f.Type.Results.List[0].Names) > 1 {
-			f.Type.Results.List[0].Type = PtrizeExpr(f.Type.Results.List[0].Type)
-			new_params = append(new_params, f.Type.Results.List[0])
-			f.Type.Results.List = nil
+		if _, is_ptr := retval_type.(*ast.StarExpr); is_ptr {
+			Call_Finish.Args = append(Call_Finish.Args, retvals[0])
+		} else {
+			Call_Finish.Args = append(Call_Finish.Args, MakeReference(retvals[0]))
 		}
+		
+		Call_Finish_stmt := new(ast.ExprStmt)
+		Call_Finish_stmt.X = Call_Finish
+		new_stmts = append(new_stmts, Call_Finish_stmt)
+	} else {
+		Call_Finish := new(ast.CallExpr)
+		Call_Finish.Fun = ast.NewIdent("Call_Finish")
+		Call_Finish.Args = nil
+		
+		Call_Finish_stmt := new(ast.ExprStmt)
+		Call_Finish_stmt.X = Call_Finish
+		new_stmts = append(new_stmts, Call_Finish_stmt)
 	}
-	f.Type.Params.List = new_params
-	
-	if f.Body != nil {
-		AnalyzeBlockStmt(f.Body);
-	}
-	ASTCtxt.CurrFunc = nil
-	ASTCtxt.RangeIter = 0
+	return new_stmts
 }
 
-func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
+func MergeMethodCalls(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch x := n.(type) {
+				case *ast.CallExpr:
+					if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call && !IsFuncPtr(x.Fun) {
+						/// check for *ast.SelectorExpr
+						x.Args = InsertExpr(x.Args, 0, caller.X)
+						if typ := ASTCtxt.TypeInfo.TypeOf(caller.X); typ != nil {
+							caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
+						}
+						x.Fun = caller.Sel
+					}
+			}
+		}
+		return true
+	})
+}
+
+
+type (
+	StmtMutator  func(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator)
+	BlockMutator func(b *ast.BlockStmt, mutator StmtMutator)
+)
+
+func MutateRets(file *ast.File) {
+	/** Case Studies of Returning statements to transform:
+	 * 
+	 * return m3() /// func m3() (type, type, type)
+	 * 
+	 * return int, float, m1() /// func m1() type
+	 * 
+	 */
+	
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateRetStmts)
+				}
+				ASTCtxt.CurrFunc = nil
+		}
+	}
+}
+
+func MutateAssigns(file *ast.File) {
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+			//case *ast.GenDecl:
+			//	AnalyzeGenDecl(d)
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateAssignStmts)
+				}
+				ASTCtxt.CurrFunc = nil
+		}
+	}
+}
+
+func MutateRanges(file *ast.File) {
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+			//case *ast.GenDecl:
+			//	AnalyzeGenDecl(d)
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateRangeStmts)
+				}
+				ASTCtxt.CurrFunc = nil
+				ASTCtxt.RangeIter = 0
+		}
+	}
+}
+
+func MutateNoRetCalls(file *ast.File) {
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+			//case *ast.GenDecl:
+			//	AnalyzeGenDecl(d)
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateNoRetCallStmts)
+				}
+				ASTCtxt.CurrFunc = nil
+		}
+	}
+}
+
+func MutateBlock(b *ast.BlockStmt, mutator StmtMutator) {
+	for i, stmt := range b.List {
+		mutator(&b.List, i, stmt, MutateBlock)
+	}
+}
+
+func MutateRetStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
 	switch n := s.(type) {
+		case *ast.BlockStmt:
+			bm(n, MutateRetStmts)
+			
+		case *ast.ForStmt:
+			/// TODO: type check init values to make sure they're the same, consistent type.
+			if n.Init != nil { /// initialization statement; or nil
+				MutateRetStmts(owner_list, index, n.Init, bm)
+			}
+			if n.Post != nil { /// post iteration statement; or nil
+				MutateRetStmts(owner_list, index, n.Post, bm)
+			}
+			bm(n.Body, MutateRetStmts)
+			
+		case *ast.IfStmt:
+			/// TODO: have initializer stmt prior to the if stmt.
+			if n.Init != nil {
+				MutateRetStmts(owner_list, index, n.Init, bm)
+			}
+			bm(n.Body, MutateRetStmts)
+			if n.Else != nil {
+				MutateRetStmts(owner_list, index, n.Else, bm)
+			}
+			
+			
+		case *ast.ReturnStmt:
+			/// change multiple var returns into passing by reference.
+			index := FindStmt(*owner_list, s)
+			res_len := len(n.Results)
+			func_calls := make([]*ast.CallExpr, 0)
+			for i := range n.Results {
+				switch call := n.Results[i].(type) {
+					case *ast.CallExpr:
+						func_calls = append(func_calls, call)
+					default:
+						func_calls = append(func_calls, nil)
+				}
+			}
+			
+			for i, r := range n.Results[1:] {
+				call := func_calls[i]
+				if call != nil && IsFuncPtr(call.Fun) {
+					//if IsFuncPtr(call.Fun) {
+						calls := ExpandFuncPtrCalls(call, []ast.Expr{ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i))}, nil)
+						for i:=len(calls)-1; i>=0; i-- {
+							*owner_list = InsertStmt(*owner_list, index, calls[i])
+						}
+					/*} else {
+						ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i)))
+						assign := MakeAssign(false)
+						assign.Lhs = append(assign.Lhs, ptr_deref)
+						assign.Rhs = append(assign.Rhs, n.Results[i])
+						*owner_list = InsertStmt(*owner_list, index, assign)
+						index++
+					}
+					*/
+				} else {
+					ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i)))
+					assign := MakeAssign(false)
+					assign.Lhs = append(assign.Lhs, ptr_deref)
+					assign.Rhs = append(assign.Rhs, r)
+					*owner_list = InsertStmt(*owner_list, index, assign)
+					index++
+				}
+			}
+			
+			if res_len > 1 {
+				n.Results = n.Results[:1]
+				MutateRetStmts(owner_list, index, s, bm)
+			} else if res_len==1 {
+				/// check for function call.
+				ast.Inspect(n.Results[0], func(node ast.Node) bool {
+					if node != nil {
+						switch call := node.(type) {
+							case *ast.CallExpr:
+								if IsFuncPtr(call.Fun) {
+									ret_tmp := ast.NewIdent(fmt.Sprintf("fptr_temp%d", ASTCtxt.TmpVar))
+									ASTCtxt.TmpVar++
+									declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, n.Results[0], nil)
+									calls := ExpandFuncPtrCalls(call, []ast.Expr{ret_tmp}, nil)
+									calls = InsertStmt(calls, 0, declstmt)
+									for i:=len(calls)-1; i>=0; i-- {
+										*owner_list = InsertStmt(*owner_list, index, calls[i])
+									}
+									n.Results[0] = ret_tmp
+								} else {
+									for _, param := range ASTCtxt.CurrFunc.Type.Params.List {
+										for _, name := range param.Names {
+											if strings.HasPrefix(name.Name, ASTCtxt.CurrFunc.Name.Name + "_param") {
+												call.Args = append(call.Args, name)
+											}
+										}
+									}
+								}
+						}
+					}
+					return true
+				})
+			}
+		
+		case *ast.SwitchStmt:
+			MutateRetStmts(owner_list, index, n.Init, bm)
+			bm(n.Body, MutateRetStmts)
+		
+		case *ast.CaseClause:
+			for i, stmt := range n.Body {
+				MutateRetStmts(&n.Body, i, stmt, bm)
+			}
+		
+		case *ast.RangeStmt:
+			bm(n.Body, MutateRetStmts)
+	}
+}
+
+func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	switch n := s.(type) {
+		case *ast.BlockStmt:
+			bm(n, MutateAssignStmts)
+			
+		case *ast.EmptyStmt:
+			
+		case *ast.ForStmt:
+			/// TODO: type check init values to make sure they're the same, consistent type.
+			if n.Init != nil { /// initialization statement; or nil
+				MutateAssignStmts(owner_list, index, n.Init, bm)
+			}
+			if n.Post != nil { /// post iteration statement; or nil
+				MutateAssignStmts(owner_list, index, n.Post, bm)
+			}
+			bm(n.Body, MutateAssignStmts)
+			
+		case *ast.IfStmt:
+			/// TODO: have initializer stmt prior to the if stmt.
+			if n.Init != nil {
+				MutateAssignStmts(owner_list, index, n.Init, bm)
+			}
+			bm(n.Body, MutateAssignStmts)
+			if n.Else != nil {
+				MutateAssignStmts(owner_list, index, n.Else, bm)
+			}
+			
+		case *ast.SwitchStmt:
+			MutateAssignStmts(owner_list, index, n.Init, bm)
+			bm(n.Body, MutateAssignStmts)
+			
+		case *ast.CaseClause:
+			for i, stmt := range n.Body {
+				MutateAssignStmts(&n.Body, i, stmt, bm)
+			}
+			
+		case *ast.RangeStmt:
+			bm(n.Body, MutateAssignStmts)
+			
 		case *ast.AssignStmt:
+			/**
+			 * a,b,c := f()
+			 * 
+			 * if not func ptr:
+			 *     var a,b,c type
+			 *     a = f(&b, &c)
+			 * 
+			 * if func ptr:
+			 *     var a,b,c type
+			 *     Call_StartFunction(nil, f)
+			 *     Call_PushCellRef(&b)
+			 *     Call_PushCellRef(&c)
+			 *     Call_Finish(&a)
+			 */
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
-			funct, is_func_call := n.Rhs[0].(*ast.CallExpr)
+			fn, is_func_call := n.Rhs[0].(*ast.CallExpr)
 			if rite_len==1 && left_len >= rite_len && is_func_call {
-				/// a func call returning multiple items.
+				/// a func call returning multiple items as a decl + init.
 				switch n.Tok {
 					case token.DEFINE:
 						decl_stmt := new(ast.DeclStmt)
@@ -501,7 +993,7 @@ func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 							if type_expr := ASTCtxt.TypeInfo.TypeOf(e); type_expr != nil {
 								var_map[type_expr] = append(var_map[type_expr], e)
 							} else {
-								PrintSrcGoErr(n.TokPos, "Failed to expand assignments.")
+								PrintSrcGoErr(n.TokPos, "Failed to expand assignment statement.")
 							}
 						}
 						
@@ -510,125 +1002,94 @@ func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 							for _, name := range val {
 								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
 							}
-							type_expr := TypeToASTExpr(key)
-							val_spec.Type = type_expr
+							val_spec.Type = TypeToASTExpr(key)
 							gen_decl.Specs = append(gen_decl.Specs, val_spec)
 						}
 						
 						decl_stmt.Decl = gen_decl
-						AnalyzeGenDecl(gen_decl)
-						
-						*owner_list = InsertStmt(*owner_list, index, decl_stmt)
+						*owner_list = InsertStmt(*owner_list, 0, decl_stmt)
 						n.Tok = token.ASSIGN
-						ManageStmtNode(owner_list, index, s)
+						MutateAssignStmts(owner_list, index+1, n, bm)
 					
-					case token.ASSIGN: /// transform the tuple return into a single return + pass by ref.
-						if is_func_call {
+					case token.ASSIGN:
+						if IsFuncPtr(fn) {
+							ret_tmp := ast.NewIdent(fmt.Sprintf("fptr_temp%d", ASTCtxt.TmpVar))
+							ASTCtxt.TmpVar++
+							declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, n.Lhs[0], nil)
+							
+							retvals := make([]ast.Expr, 0)
+							retvals = append(retvals, ret_tmp)
 							for i:=1; i<left_len; i++ {
-								switch e := n.Lhs[i].(type) {
+								retvals = append(retvals, n.Lhs[i])
+							}
+							calls := ExpandFuncPtrCalls(fn, retvals, nil)
+							calls = InsertStmt(calls, 0, declstmt)
+							for i := len(calls)-1; i>=0; i-- {
+								*owner_list = InsertStmt(*owner_list, index, calls[i])
+							}
+							n.Lhs = n.Lhs[:1]
+							n.Rhs[0] = ret_tmp
+						} else {
+							/// transform the tuple return into a single return + pass by ref.
+							for _, l := range n.Lhs[1:] {
+								switch e := l.(type) {
 									case *ast.Ident:
-										funct.Args = append(funct.Args, MakeReference(e))
+										fn.Args = append(fn.Args, MakeReference(e))
 								}
 							}
 							n.Lhs = n.Lhs[:1]
 						}
 				}
 			}
-			for _, e := range n.Lhs {
-				ManageExprNode(owner_list, s, e)
-			}
-			for _, e := range n.Rhs {
-				ManageExprNode(owner_list, s, e)
-			}
-		
+	}
+}
+
+func MutateRangeStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	switch n := s.(type) {
 		case *ast.BlockStmt:
-			AnalyzeBlockStmt(n)
-		
-		case *ast.BranchStmt:
-			if n.Tok==token.GOTO || n.Tok==token.FALLTHROUGH {
-				PrintSrcGoErr(n.Pos(), fmt.Sprintf(" %s is Illegal.", n.Tok.String()))
-			} else if n.Label != nil {
-				PrintSrcGoErr(n.Pos(), "Branched Labels are Illegal.")
-			}
-		
-		case *ast.DeclStmt:
-			ManageDeclNode(n.Decl)
+			bm(n, MutateAssignStmts)
 			
 		case *ast.EmptyStmt:
 			
-		case *ast.ExprStmt:
-			ManageExprNode(owner_list, s, n.X)
-			
 		case *ast.ForStmt:
-			/// in Golang, 'for' replaces both for and while-loops.
-			/// we'll have to replace while-loop like constructs with a degenerate for-loop
+			/// TODO: type check init values to make sure they're the same, consistent type.
 			if n.Init != nil { /// initialization statement; or nil
-				ManageStmtNode(owner_list, index, n.Init)
-			}
-			if n.Cond != nil { /// condition; or nil
-				ManageExprNode(owner_list, s, n.Cond)
+				MutateAssignStmts(owner_list, index, n.Init, bm)
 			}
 			if n.Post != nil { /// post iteration statement; or nil
-				ManageStmtNode(owner_list, index, n.Post)
+				MutateAssignStmts(owner_list, index, n.Post, bm)
 			}
-			AnalyzeBlockStmt(n.Body)
+			bm(n.Body, MutateAssignStmts)
 			
 		case *ast.IfStmt:
 			/// TODO: have initializer stmt prior to the if stmt.
 			if n.Init != nil {
-				ManageStmtNode(owner_list, index, n.Init)
+				MutateAssignStmts(owner_list, index, n.Init, bm)
 			}
-			ManageExprNode(owner_list, s, n.Cond)
-			AnalyzeBlockStmt(n.Body)
+			bm(n.Body, MutateAssignStmts)
 			if n.Else != nil {
-				ManageStmtNode(owner_list, index, n.Else)
-			}
-			
-		case *ast.IncDecStmt:
-			ManageExprNode(owner_list, s, n.X)
-			
-		case *ast.ReturnStmt:
-			/// change multiple var returns into passing by reference.
-			index := FindStmt(*owner_list, s)
-			res_len := len(n.Results)
-			for i:=1; i<res_len; i++ {
-				ptr_deref := PtrizeExpr(ast.NewIdent(fmt.Sprintf("%s_param%d", ASTCtxt.CurrFunc.Name.Name, i)))
-				assign := new(ast.AssignStmt)
-				assign.Lhs = append(assign.Lhs, ptr_deref)
-				assign.Tok = token.ASSIGN
-				assign.Rhs = append(assign.Rhs, n.Results[i])
-				*owner_list = InsertStmt(*owner_list, index, assign)
-				index++
-			}
-			if res_len > 1 {
-				n.Results = n.Results[:1]
-				ManageStmtNode(owner_list, index, s) /// reanalyze
+				MutateAssignStmts(owner_list, index, n.Else, bm)
 			}
 		
 		case *ast.SwitchStmt:
-			ManageStmtNode(owner_list, index, n.Init)
-			ManageExprNode(owner_list, s, n.Tag)
-			AnalyzeBlockStmt(n.Body)
+			MutateAssignStmts(owner_list, index, n.Init, bm)
+			bm(n.Body, MutateAssignStmts)
 		
 		case *ast.CaseClause:
-			for _, expr := range n.List {
-				ManageExprNode(owner_list, s, expr)
-			}
 			for i, stmt := range n.Body {
-				ManageStmtNode(&n.Body, i, stmt)
+				MutateAssignStmts(&n.Body, i, stmt, bm)
 			}
 		
-		case *ast.RangeStmt: /// TODO: adapt range statement for ArrayLists and other containers.
+		case *ast.RangeStmt:
 			if n.Key != nil {
 				if iden, ok := n.Key.(*ast.Ident); ok && iden.Name=="_" {
-					n.Key = MakeIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+					n.Key = ast.NewIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
 					ASTCtxt.RangeIter++
 				}
 			} else {
-				n.Key = MakeIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+				n.Key = ast.NewIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
 				ASTCtxt.RangeIter++
 			}
-			ManageExprNode(owner_list, s, n.Key)
 			
 			if n.Value != nil {
 				if iden, ok := n.Value.(*ast.Ident); ok && iden.Name=="_" {
@@ -636,236 +1097,132 @@ func ManageStmtNode(owner_list *[]ast.Stmt, index int, s ast.Stmt) {
 				} else {
 					switch n.Tok {
 						case token.DEFINE:
-							decl_stmt := new(ast.DeclStmt)
-							gen_decl := new(ast.GenDecl)
-							gen_decl.Tok = token.VAR
-							
-							val_spec := new(ast.ValueSpec)
-							id := n.Value.(*ast.Ident)
-							val_spec.Names = append(val_spec.Names, id)
-							
-							val_spec.Type = ValueToTypeExpr(n.Value)
-							gen_decl.Specs = append(gen_decl.Specs, val_spec)
-							
-							decl_stmt.Decl = gen_decl
+							decl_stmt := MakeVarDecl([]*ast.Ident{n.Value.(*ast.Ident)}, n.Value, nil)
 							n.Body.List = InsertStmt(n.Body.List, 0, decl_stmt)
 							
-							assign := new(ast.AssignStmt)
+							assign := MakeAssign(false)
 							assign.Lhs = append(assign.Lhs, n.Value)
 							
-							get_index := new(ast.IndexExpr)
-							get_index.Index = n.Key
-							get_index.X = n.X
+							get_index := MakeIndex(n.Key, n.X)
 							assign.Rhs = append(assign.Rhs, get_index)
-							assign.Tok = token.ASSIGN
+							
 							n.Body.List = InsertStmt(n.Body.List, 1, assign)
 							n.Value = nil
 					}
 				}
 			}
-			ManageExprNode(owner_list, s, n.X)
-			AnalyzeBlockStmt(n.Body)
-		
-		case *ast.CommClause:
-			PrintSrcGoErr(n.Pos(), "Comm Select Cases are Illegal.")
-		case *ast.DeferStmt:
-			PrintSrcGoErr(n.Pos(), "Defer Statements are Illegal.")
-		case *ast.TypeSwitchStmt:
-			PrintSrcGoErr(n.Pos(), "Type-Switches are Illegal.")
-		case *ast.LabeledStmt:
-			PrintSrcGoErr(n.Pos(), "Labels are Illegal.")
-		case *ast.GoStmt:
-			PrintSrcGoErr(n.Pos(), "Goroutines are Illegal.")
-		case *ast.SelectStmt:
-			PrintSrcGoErr(n.Pos(), "Select Statements are Illegal.")
-		case *ast.SendStmt:
-			PrintSrcGoErr(n.Pos(), "Send Statements are Illegal.")
+			bm(n.Body, MutateRangeStmts)
 	}
 }
 
-func AnalyzeBlockStmt(b *ast.BlockStmt) {
-	for i, stmt := range b.List {
-		ManageStmtNode(&b.List, i, stmt)
-	}
-}
-
-
-func ManageExprNode(owner_list *[]ast.Stmt, owner_stmt ast.Stmt, e ast.Expr) {
-	switch x := e.(type) {
-		case *ast.IndexExpr:
-			ManageExprNode(owner_list, owner_stmt, x.X)
-			ManageExprNode(owner_list, owner_stmt, x.Index)
-		
-		case *ast.KeyValueExpr:
-			ManageExprNode(owner_list, owner_stmt, x.Key)
-			ManageExprNode(owner_list, owner_stmt, x.Value)
-		
-		case *ast.ParenExpr:
-			ManageExprNode(owner_list, owner_stmt, x.X)
-		
-		case *ast.StarExpr:
-			/// in an ordinary block, we ignore the dereference since it'll become a reference.
-			ManageExprNode(owner_list, owner_stmt, x.X)
-		
-		case *ast.UnaryExpr:
-			ManageExprNode(owner_list, owner_stmt, x.X)
-		
-		case *ast.CallExpr:
-			is_fptr := IsFuncPtr(x.Fun)
-			/*
-			if is_fptr {
-				Call_StartFunction := ast.NewIdent("Call_StartFunction")
-				new_args := []ast.Expr{ast.NewIdent("nil"), x.Fun}
-				
-				//call_start_stmt := new(ast.ExprStmt)
-				//call_start_stmt.X = Call_StartFunction
-				stmt_index := FindStmt(*owner_list, owner_stmt)
-				x.Fun = Call_StartFunction
-				//*owner_list = InsertStmt(*owner_list, stmt_index, call_start_stmt)
-				
-				for _, arg := range x.Args {
-					if typ := ASTCtxt.TypeInfo.TypeOf(arg); typ != nil {
-						switch t := typ.(type) {
-							case *types.Array:
-								switch t.Elem().String() {
-									case "char":
-										Call_PushStringEx := new(ast.CallExpr)
-										Call_PushStringEx.Fun = ast.NewIdent("Call_PushStringEx")
-										Call_PushStringEx.Args = append(Call_PushStringEx.Args, arg)
-										
-										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
-										
-										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "1"))
-										
-										Call_PushStringEx.Args = append(Call_PushStringEx.Args, MakeBasicLit(token.INT, "2"))
-										
-										Call_PushString_stmt := new(ast.ExprStmt)
-										Call_PushString_stmt.X = Call_PushStringEx
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
-									default:
-										Call_PushArrayEx := new(ast.CallExpr)
-										Call_PushArrayEx.Fun = ast.NewIdent("Call_PushArrayEx")
-										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, arg)
-										
-										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, fmt.Sprintf("%d", t.Len())))
-										
-										Call_PushArrayEx.Args = append(Call_PushArrayEx.Args, MakeBasicLit(token.INT, "1"))
-										
-										Call_PushArrayEx_stmt := new(ast.ExprStmt)
-										Call_PushArrayEx_stmt.X = Call_PushArrayEx
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushArrayEx_stmt)
-								}
-							case *types.Pointer:
-								switch t.Elem().String() {
-									case "float":
-										Call_PushFloatRef := new(ast.CallExpr)
-										Call_PushFloatRef.Fun = ast.NewIdent("Call_PushFloatRef")
-										Call_PushFloatRef.Args = append(Call_PushFloatRef.Args, arg)
-										
-										Call_PushFloatRef_stmt := new(ast.ExprStmt)
-										Call_PushFloatRef_stmt.X = Call_PushFloatRef
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushFloatRef_stmt)
-									default:
-										Call_PushCellRef := new(ast.CallExpr)
-										Call_PushCellRef.Fun = ast.NewIdent("Call_PushCellRef")
-										Call_PushCellRef.Args = append(Call_PushCellRef.Args, arg)
-										
-										Call_PushCellRef_stmt := new(ast.ExprStmt)
-										Call_PushCellRef_stmt.X = Call_PushCellRef
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushCellRef_stmt)
-								}
-							case *types.Basic:
-								switch t.Name() {
-									case "string":
-										Call_PushString := new(ast.CallExpr)
-										Call_PushString.Fun = ast.NewIdent("Call_PushString")
-										Call_PushString.Args = append(Call_PushString.Args, arg)
-										
-										Call_PushString_stmt := new(ast.ExprStmt)
-										Call_PushString_stmt.X = Call_PushString
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushString_stmt)
-									case "float", "float32":
-										Call_PushFloat := new(ast.CallExpr)
-										Call_PushFloat.Fun = ast.NewIdent("Call_PushFloat")
-										Call_PushFloat.Args = append(Call_PushFloat.Args, arg)
-										
-										Call_PushFloat_stmt := new(ast.ExprStmt)
-										Call_PushFloat_stmt.X = Call_PushFloat
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushFloat_stmt)
-									default:
-										//"Call_PushCell(%s); ", GetExprString(arg))
-										Call_PushCell := new(ast.CallExpr)
-										Call_PushCell.Fun = ast.NewIdent("Call_PushCell")
-										Call_PushCell.Args = append(Call_PushCell.Args, arg)
-										
-										Call_PushCell_stmt := new(ast.ExprStmt)
-										Call_PushCell_stmt.X = Call_PushCell
-										*owner_list = InsertStmt(*owner_list, stmt_index+1, Call_PushCell_stmt)
-								}
-						}
-					}
-				}
-				//"Call_Finish();")
-				x.Args = new_args
-			}*/
-			if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call && !is_fptr {
-				/// check for *ast.SelectorExpr
-				x.Args = InsertExpr(x.Args, 0, caller.X)
-				if typ := ASTCtxt.TypeInfo.TypeOf(caller.X); typ != nil {
-					caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
-				}
-				x.Fun = caller.Sel
+func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	switch n := s.(type) {
+		case *ast.BlockStmt:
+			bm(n, MutateNoRetCallStmts)
+			
+		case *ast.ForStmt:
+			/// TODO: type check init values to make sure they're the same, consistent type.
+			if n.Init != nil { /// initialization statement; or nil
+				MutateNoRetCallStmts(owner_list, index, n.Init, bm)
+			}
+			if n.Post != nil { /// post iteration statement; or nil
+				MutateNoRetCallStmts(owner_list, index, n.Post, bm)
+			}
+			bm(n.Body, MutateNoRetCallStmts)
+			
+		case *ast.IfStmt:
+			/// TODO: have initializer stmt prior to the if stmt.
+			if n.Init != nil {
+				MutateNoRetCallStmts(owner_list, index, n.Init, bm)
+			}
+			bm(n.Body, MutateNoRetCallStmts)
+			if n.Else != nil {
+				MutateNoRetCallStmts(owner_list, index, n.Else, bm)
 			}
 			
-			ManageExprNode(owner_list, owner_stmt, x.Fun)
-			for _, arg := range x.Args {
-				ManageExprNode(owner_list, owner_stmt, arg)
+		case *ast.SwitchStmt:
+			MutateNoRetCallStmts(owner_list, index, n.Init, bm)
+			bm(n.Body, MutateNoRetCallStmts)
+		
+		case *ast.CaseClause:
+			for i, stmt := range n.Body {
+				MutateNoRetCallStmts(&n.Body, i, stmt, bm)
 			}
-		
-		case *ast.BinaryExpr: /// a op b
-			/// a &^ b ==> a & ^(b) ==> a & ~(b) in sp.
-			if x.Op==token.AND_NOT {
-				x.Op = token.AND
-				
-				n := new(ast.UnaryExpr)
-				n.Op = token.XOR
-				
-				p := new(ast.ParenExpr)
-				p.X = x.Y
-				n.X = p
-				x.Y = n
-			} else if x.Op==token.AND_NOT_ASSIGN {
-				x.Op = token.AND_ASSIGN
-				
-				n := new(ast.UnaryExpr)
-				n.Op = token.XOR
-				
-				p := new(ast.ParenExpr)
-				p.X = x.Y
-				n.X = p
-				x.Y = n
+			
+		case *ast.RangeStmt:
+			bm(n.Body, MutateRangeStmts)
+			
+		case *ast.ExprStmt:
+			if fn, is_func_call := n.X.(*ast.CallExpr); is_func_call {
+				if typ := ASTCtxt.TypeInfo.TypeOf(fn); typ != nil {
+					switch t := typ.(type) {
+						case *types.Tuple:
+							extra_args := t.Len()
+							if IsFuncPtr(fn) {
+								if extra_args > 1 {
+									retvals := make([]ast.Expr, 0)
+									rettypes := make([]types.Type, 0)
+									for i:=0; i<extra_args; i++ {
+										ret_tmp := ast.NewIdent(fmt.Sprintf("fptr_temp%d", ASTCtxt.TmpVar))
+										ASTCtxt.TmpVar++
+										declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, nil, t.At(i).Type())
+										*owner_list = InsertStmt(*owner_list, 0, declstmt)
+										retvals = append(retvals, ret_tmp)
+										rettypes = append(rettypes, t.At(i).Type())
+									}
+									
+									calls := ExpandFuncPtrCalls(fn, retvals, rettypes)
+									for i := len(calls)-1; i>0; i-- {
+										*owner_list = InsertStmt(*owner_list, FindStmt(*owner_list, n)+1, calls[i])
+									}
+									n.X = calls[0].(*ast.ExprStmt).X
+								} else {
+									calls := ExpandFuncPtrCalls(fn, nil, nil)
+									n.X = calls[0].(*ast.ExprStmt).X
+									for i := len(calls)-1; i>0; i-- {
+										*owner_list = InsertStmt(*owner_list, FindStmt(*owner_list, n)+1, calls[i])
+									}
+								}
+							} else {
+								if extra_args > 1 {
+									for i:=1; i<extra_args; i++ {
+										ret_tmp := ast.NewIdent(fmt.Sprintf("fn_temp%d", ASTCtxt.TmpVar))
+										ASTCtxt.TmpVar++
+										declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, nil, t.At(i).Type())
+										*owner_list = InsertStmt(*owner_list, 0, declstmt)
+										fn.Args = append(fn.Args, MakeReference(ret_tmp))
+									}
+								}
+							}
+					}
+				}
 			}
-			ManageExprNode(owner_list, owner_stmt, x.X)
-			ManageExprNode(owner_list, owner_stmt, x.Y)
-		
-		case *ast.SelectorExpr:
-			ManageExprNode(owner_list, owner_stmt, x.X)
-			ManageExprNode(owner_list, owner_stmt, x.Sel)
-		
-		case *ast.Ident:
-			//Obj *Object   // denoted object; or nil
-		
-		case *ast.BasicLit:
-			if x.Kind==token.IMAG {
-				PrintSrcGoErr(x.Pos(), "Imaginary Numbers are Illegal.")
-			}
-		
-		case *ast.TypeAssertExpr:
-			PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
-		case *ast.SliceExpr:
-			PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
 	}
 }
+
+/// a &^ b ==> a & ^(b) ==> a & ~(b) in sp.
+func MutateAndNotExpr(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch x := n.(type) {
+				case *ast.BinaryExpr:
+					if x.Op==token.AND_NOT {
+						x.Op = token.AND
+						x.Y = MakeBitNotExpr(MakeParenExpr(x.Y))
+					}
+				case *ast.AssignStmt:
+					if x.Tok==token.AND_NOT_ASSIGN {
+						x.Tok = token.AND_ASSIGN
+						for i := range x.Rhs {
+							x.Rhs[i] = MakeBitNotExpr(MakeParenExpr(x.Rhs[i]))
+						}
+					}
+			}
+		}
+		return true
+	})
+}
+
 
 func PrintNode(n ast.Node) string {
 	var ast_str string
@@ -889,10 +1246,10 @@ func PrintAST(f *ast.File) string {
 	return ast_str
 }
 
-func PrettyPrintAST(f ast.Node) string {
+func PrettyPrintAST(n ast.Node) string {
 	fset := token.NewFileSet()
 	var buf bytes.Buffer
-	err := format.Node(&buf, fset, f)
+	err := format.Node(&buf, fset, n)
 	if err != nil {
 		fmt.Println(err)
 	}

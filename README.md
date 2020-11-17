@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.25a
+v0.26a
 
 ## Introduction
 
@@ -67,10 +67,34 @@ switch {
 }
 ```
 
+* Function pointer calls are broken down into manual Function API calling:
+```go
+func main() {
+	CB := OnClientPutInServer
+	for i := 1; i<=MaxClients; i++ {
+		CB(i)
+	}
+}
+
+func OnClientPutInServer(client Entity) {}
+```
+Becomes:
+```c
+public void OnPluginStart() {
+	Function CB = OnClientPutInServer;
+	for (int i = 1; i <= MaxClients; i++) {
+		Call_StartFunction(null, CB);
+		Call_PushCell(i);
+		Call_Finish();
+	}
+}
+
+public void OnClientPutInServer(int client) {}
+```
+
 ### Planned Features
 * Generate Natives and an include file for them.
 * Abstract, type-based syntax translation for higher data types like `StringMap` and `ArrayList`.
-* Abstract function pointers from manual Function API calling.
 * Abstract anonymous functions into name-generated functions. (perfect for abstracting timers)
 * Handle-based Data Structures are abstracted into supportive syntax such where it's `value = Map["key"]` instead of `map.GetValue("key", value);`
 * Func Methods for Entities and Vectors.

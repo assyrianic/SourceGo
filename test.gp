@@ -43,11 +43,41 @@ type (
 	
 	Kektus    func(i, x  Vec3,  b    string, blocks        *Name, KC *int) Handle
 	EventFunc func(event Event, name string, dontBroadcast bool)           Action
+	VecFunc   func(vec Vec3) (float, float, float)
 )
 
 func (pi PlayerInfo) GetOrigin(buffer *Vec3) (float,float,float) {
 	*buffer = pi.Origin
 	return pi.Origin[0], pi.Origin[1], pi.Origin[2] 
+}
+
+func TestOrigin() (float, float, float) {
+	var (
+		pi PlayerInfo
+		o Vec3
+	)
+	return pi.GetOrigin(&o)
+}
+
+var (
+	ff1 func() int
+	ff2 func() int
+	ff3 func() float
+)
+
+func FF1() int
+func FF2() int
+func FF3() float
+func FF4() (int, int, float)
+
+func GG1() (int, int, float) {
+	return FF1(), FF2(), FF3() 
+}
+func GG2() (int, int, float) {
+	return ff1(), ff2(), ff3()
+}
+func GG3() (int, int, float) {
+	return FF4()
 }
 
 func GetFuncByName(name string) func(client Entity)
@@ -64,15 +94,25 @@ func main() {
 	var origin Vec3
 	x,y,z := p.GetOrigin(&origin)
 	
+	//var k,l int
+	//k &^= l
+	
+	CB := MultiRetFn
 	p.PutInServer = OnClientPutInServer
 	for i := 1; i<=MaxClients; i++ {
-		//p.PutInServer(i) /// in progress...
-		Call_StartFunction(nil, p.PutInServer);
-		Call_PushCell(i);
-		Call_Finish();
+		p.PutInServer(i)
+		CB()
+		j,k,l := CB()
+	}
+	
+	for f := 2.0; f < 100.0; f = Pow(f, 2.0) {
+		PrintToServer("%0.2f", f)
 	}
 }
 
+func MultiRetFn() (bool, bool, bool) {
+	return true,false,true
+}
+
 func OnClientPutInServer(client Entity) {
-	
 }
