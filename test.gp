@@ -1,5 +1,9 @@
 package main
 
+import (
+	"sourcemod"
+)
+
 var (
 	myself = Plugin{
 		name:        "SrcGo Plugin",
@@ -26,9 +30,9 @@ const (
 
 type (
 	Point struct{ x, y float }
-	QAngle Vec3
-	Name [64]char
-	Color = [4]int
+	QAngle = Vec3
+	Name   = [64]char
+	Color  = [0x4]int
 	
 	PlayerInfo struct {
 		Origin Vec3
@@ -115,4 +119,30 @@ func MultiRetFn() (bool, bool, bool) {
 }
 
 func OnClientPutInServer(client Entity) {
+}
+
+func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
+	var playerAngles, vecforward, right, up Vec3
+	GetClientEyeAngles(client, playerAngles)
+	
+	up[2] = 1.0
+	GetAngleVectors(playerAngles, &vecforward, &NULL_VECTOR, &NULL_VECTOR)
+	vecforward[2] = 0.0
+	
+	NormalizeVector(vecforward, &vecforward)
+	GetVectorCrossProduct(up, vecforward, &right)
+	
+	front, side := GetVectorDotProduct(vecDelta, vecforward), GetVectorDotProduct(vecDelta, right)
+	
+	xpos = 360.0 * -front
+	ypos = 360.0 * -side
+	
+	flRotation := (ArcTangent2(xpos, ypos) + FLOAT_PI) * (57.29577951)
+	
+	yawRadians := -flRotation * 0.017453293
+
+	// Rotate it around the circle
+	xpos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0
+	ypos = ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
+	return
 }

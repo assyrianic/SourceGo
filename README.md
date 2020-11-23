@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.26a
+v0.35a
 
 ## Introduction
 
@@ -17,8 +17,6 @@ bool   => bool
 int8   => char
 string => char[]
 Vec3   => float[3]
-Map    => StringMap
-Array  => ArrayList
 ```
 
 * `#include <sourcemod>` and semicolon & new decls pragma are automatically added to each generated sourcepawn code file.
