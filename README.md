@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.35a
+v0.36a
 
 ## Introduction
 
@@ -14,8 +14,8 @@ Here is the current types list and what it abstracts to:
 int    => int
 float  => float
 bool   => bool
-int8   => char
-string => char[]
+byte   => char
+string => const char[]
 Vec3   => float[3]
 ```
 
@@ -23,7 +23,7 @@ Vec3   => float[3]
 
 * Sourcemod-based constants, functions, and types are automatically added as part of the universal Go scope.
 
-* Patterned matching where...
+* Pattern matching where...
 
 `string` matches to `const char[]`
 and `*string` matches to `char[]`.
@@ -107,7 +107,7 @@ To submit a patch, file an issue and/or hit up a pull request.
 
 ## Help
 
-Commandline options:
+Command line options:
 * `--debug`, `-dbg` - prints the file's modified AST and pretty-printed version to a file for later checking.
 
 * `--force`, `-f` - forcefully generates a SourcePawn source code file, even if errors/issues occurred during transpilation.

@@ -134,15 +134,61 @@ func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
 	
 	front, side := GetVectorDotProduct(vecDelta, vecforward), GetVectorDotProduct(vecDelta, right)
 	
-	xpos = 360.0 * -front
-	ypos = 360.0 * -side
-	
+	xpos, ypos = 360.0 * -front, 360.0 * -side
 	flRotation := (ArcTangent2(xpos, ypos) + FLOAT_PI) * (57.29577951)
-	
 	yawRadians := -flRotation * 0.017453293
 
-	// Rotate it around the circle
-	xpos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0
-	ypos = ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
+	/// Rotate it around the circle
+	xpos, ypos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0, ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
 	return
+}
+
+func KeyValuesToStringMap(kv KeyValues, stringmap StringMap, hide_top bool, depth int, prefix string) {
+	for {
+		var section_name [128]char
+		kv.GetSectionName(section_name, len(section_name))
+		
+		if kv.GoToFirstSubKey(false) {
+			var new_prefix [128]char
+			switch {
+				case depth==0 && hide_top:
+					new_prefix = ""
+				case prefix[0] == 0:
+					new_prefix = section_name
+				default:
+					FormatEx(new_prefix, len(new_prefix), "%s.%s", prefix, section_name)
+			}
+			KeyValuesToStringMap(kv, stringmap, hide_top, depth+1, new_prefix)
+            kv.GoBack()
+		} else {
+			if kv.GetDataType(NULL_STRING) != KvData_None {
+				var key[128]char
+				if prefix[0] == 0 {
+					key = section_name
+				} else {
+					FormatEx(key, len(key), "%s.%s", prefix, section_name)
+				}
+				
+				//lowercaseify the key
+				len := strlen(key)
+				for i := 0; i < len; i++ {
+					bytes := IsCharMB(key[i])
+					if !bytes {
+						key[i] = CharToLower(key[i])
+					} else {
+						i += (bytes - 1)
+					}
+				}
+				
+				var value [128]char
+				kv.GetString(NULL_STRING, value, len(value))
+				
+				stringmap.SetString(key, value, false)
+			}
+		}
+		
+		if !kv.GotoNextKey(false) {
+			break
+		}
+	}
 }

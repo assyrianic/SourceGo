@@ -490,34 +490,28 @@ func MergeRetVals(file *ast.File) {
 }
 
 func ChangeRecvrNames(file *ast.File) {
-	receivers := make(map[string]*ast.FuncDecl)
 	ast.Inspect(file, func(n ast.Node) bool {
 		if n != nil {
 			switch f := n.(type) {
 				case *ast.FuncDecl:
-					/// merge receiver with the params and nullify it.
 					if f.Recv != nil && f.Recv.List[0].Names != nil && len(f.Recv.List[0].Names) > 0 {
-						receivers[f.Recv.List[0].Names[0].Name] = f
+						recvr := f.Recv.List[0].Names[0].Name
+						ast.Inspect(f.Body, func(n ast.Node) bool {
+							if n != nil {
+								switch i := n.(type) {
+									case *ast.Ident:
+										if recvr==i.Name {
+											i.Name = "this"
+										}
+								}
+							}
+							return true
+						})
 					}
 			}
 		}
 		return true
 	})
-	
-	for var_name, fn_decl := range receivers {
-		ast.Inspect(fn_decl.Body, func(n ast.Node) bool {
-			if n != nil {
-				switch f := n.(type) {
-					case *ast.Ident:
-						/// merge receiver with the params and nullify it.
-						if var_name==f.Name {
-							f.Name = "this"
-						}
-				}
-			}
-			return true
-		})
-	}
 }
 
 func MakeFuncPtrArgCall(arg ast.Expr, by_ref bool, pretyp types.Type) *ast.ExprStmt {
