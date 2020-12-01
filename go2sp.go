@@ -34,6 +34,8 @@ import (
 const (
 	Flag_Debug = (iota + 1) << 1
 	Flag_Force
+	ErrStr string = "[ERROR]"
+	WrnStr string = "[WARNING]"
 )
 
 
@@ -82,13 +84,14 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.36a")
+				fmt.Println("SourceGo version: v0.37a")
 			default:
+				new_file_name := fmt.Sprintf("%s.sp", argStr)
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(argStr)
 				CheckErr(err1)
 				/// parse the file and get a File AST Node.
-				file_ast, err2 := parser.ParseFile(fset, argStr, code, parser.AllErrors /*| parser.ParseComments*/)
+				file_ast, err2 := parser.ParseFile(fset, argStr, code, parser.AllErrors | parser.ParseComments)
 				if err2 != nil {
 					for _, e := range err2.(scanner.ErrorList) {
 						fmt.Println(e)
@@ -99,13 +102,6 @@ func main() {
 					pkgs := make(map[string]*ast.File)
 					ast_files := DoImports(dir, file_ast, fset, pkgs)
 					
-					/*defer func() {
-						if err := recover(); err != nil {
-							fmt.Printf("RECOVERY: %T - %+v\n", err, err)
-							//debug.PrintStack()
-							//ast.Print(fset, file_ast)
-						}
-					}()*/
 					var typeErrs, transpileErrs []error
 					conf := types.Config{
 						Importer: importer.Default(),
@@ -113,7 +109,7 @@ func main() {
 						Error: func(err error) {
 							if strings.Contains(err.Error(), "could not import") {
 							} else if strings.Contains(err.Error(), "declared but not used") {
-								fmt.Printf("%s %20s\n", err, "[warning]")
+								fmt.Printf("%-20s %s\n", err, WrnStr)
 							} else {
 								typeErrs = append(typeErrs, err)
 								bad_compile = true
@@ -129,13 +125,6 @@ func main() {
 						Selections: make(map[*ast.SelectorExpr]*types.Selection),
 					}
 					
-					/// Do initial type-check of the File AST Node so we can get type information.
-					if _, err := conf.Check(``, fset, ast_files, info); err != nil {
-						for _, e := range typeErrs {
-							fmt.Printf("%s %20s\n", e, "[error]")
-						}
-					}
-					
 					/// initialize our transpiler.
 					ASTMod.SetUpSrcGo(fset, info, func(err error) {
 						transpileErrs = append(transpileErrs, err)
@@ -144,6 +133,15 @@ func main() {
 					
 					/// first step: Analyze for illegal golang constructs.
 					ASTMod.AnalyzeIllegalCode(file_ast)
+					
+					ASTMod.NameAnonFuncs(&file_ast)
+					
+					/// Do initial type-check of the File AST Node so we can get type information.
+					if _, err := conf.Check(``, fset, ast_files, info); err != nil {
+						for _, e := range typeErrs {
+							fmt.Printf("%-20s %s\n", e, ErrStr)
+						}
+					}
 					
 					ASTMod.MergeRetVals(file_ast)
 					
@@ -159,11 +157,11 @@ func main() {
 					
 					ASTMod.MutateNoRetCalls(file_ast)
 					
-					/// TODO: for for loop inits that have multiple vars.
+					/// TODO: for for-loop inits that have multiple vars.
 					//ASTMod.MutateForInits(file_ast)
 					
 					for _, e := range transpileErrs {
-						fmt.Printf("%s %20s\n", e, "[error]")
+						fmt.Printf("%-20s %s\n", e, ErrStr)
 					}
 					
 					conf.Check(``, fset, ast_files, info)
@@ -172,11 +170,11 @@ func main() {
 						WriteToFile(fmt.Sprintf("%s_output.go", argStr), ASTMod.PrettyPrintAST(file_ast))
 					}
 				}
-				new_file_name := fmt.Sprintf("%s.sp", argStr)
+				
 				if bad_compile && opts & Flag_Force==0 {
 					fmt.Println(fmt.Sprintf("SourceGo: file '%s' generation FAILED.", new_file_name))
 				} else {
-					final_code := GoToSPGen.GeneratePluginFile(file_ast) //GoToSPGen.GenSPFile(file_ast)
+					final_code := GoToSPGen.GeneratePluginFile(file_ast)
 					WriteToFile(argStr + ".sp", final_code)
 					if bad_compile {
 						fmt.Println("SourceGo: transpiled " + new_file_name + " but might need correction.")

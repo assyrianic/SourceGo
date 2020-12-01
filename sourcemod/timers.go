@@ -23,11 +23,13 @@ const (
 
 
 type (
-	Timer Handle
-	TimerFunc func(timer Timer, data any)
+	Timer = Handle
+	TimerFunc func(timer Timer, data any) Action
 )
 
 func CreateTimer(interval float, tfn TimerFunc, data any, flags int) Timer
+func CreateDataTimer(interval float, tfn TimerFunc, datapack *any, flags int) Timer
+
 func KillTimer(timer Timer, autoClose bool)
 func TriggerTimer(timer Timer, reset bool)
 func GetTickedTime() float
@@ -36,4 +38,3 @@ func GetMapTimeLimit(time *int) bool
 func ExtendMapTimeLimit(time int) bool
 func GetTickInterval() float
 func IsServerProcessing() bool
-func CreateDataTimer(interval float, tfn TimerFunc, datapack *any, flags int) Timer

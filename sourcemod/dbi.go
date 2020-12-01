@@ -1,5 +1,5 @@
 /**
- * sourcemod.go
+ * sourcemod/dbi.go
  * 
  * Copyright 2020 Nirari Technologies, Alliedmodders LLC.
  * 
@@ -13,53 +13,27 @@
 
 package main
 
-import (
-	"sourcemod/core"
-	"sourcemod/floats"
-	"sourcemod/vector"
-	"sourcemod/strings"
-	"sourcemod/handles"
-	"sourcemod/functions"
-	"sourcemod/files"
-	"sourcemod/logging"
-	"sourcemod/timers"
-	"sourcemod/admin"
-	"sourcemod/keyvalues"
-	
-	/** TODO: Finish making SourceGo iface for these includes:
-		#include <dbi>
-		#include <lang>
-		#include <sorting>
-		#include <textparse>
-		#include <clients>
-		#include <console>
-		#include <convars>
-		#include <events>
-		#include <bitbuffer>
-		#include <protobuf>
-		#include <usermessages>
-		#include <menus>
-		#include <halflife>
-		#include <adt>
-		#include <banning>
-		#include <commandfilters>
-		#include <nextmap>
-		#include <commandline>
-		#include <helpers>
-		#include <entity>
-		#include <entity_prop_stocks>
-	*/
-)
 
-
-var MaxClients int
-
+type DBResult int
 const (
-	MAXPLAYERS = 65
-	MAXENTS = 2048
+	DBVal_Error = DBResult(0)        /**< Column number/field is invalid. */
+	DBVal_TypeMismatch = 1 /**< You cannot retrieve this data with this type. */
+	DBVal_Null = 2         /**< Field has no data (NULL) */
+	DBVal_Data = 3         /**< Field has data */
 )
 
+type DBBindType int
+const (
+	DBBind_Int = DBResult(0)         /**< Bind an integer. */
+	DBBind_Float = DBResult(1)       /**< Bind a float. */
+	DBBind_String = DBResult(2)      /**< Bind a string. */
+)
 
-func IsClientInGame(client int) bool
-func PrintToServer(fmt string, args ...any)
-func IsValidEntity(ent Entity) bool
+type DBPriority int
+const (
+	DBPrio_High = DBPriority(0)        /**< High priority. */
+	DBPrio_Normal = DBPriority(1)      /**< Normal priority. */
+	DBPrio_Low = DBPriority(2)         /**< Low priority. */
+)
+
+type DBDriver Handle

@@ -30,11 +30,12 @@ import (
 
 var ASTCtxt struct {
 	TypeInfo      *types.Info
+	CurrFile      **ast.File
 	CurrFunc      *ast.FuncDecl
 	FSet          *token.FileSet
 	BuiltInTypes  map[string]types.Object
 	Err           func(err error)
-	RangeIter,TmpVar uint
+	RangeIter,TmpVar,TmpFunc uint
 }
 
 func PtrizeExpr(x ast.Expr) *ast.StarExpr {
@@ -215,6 +216,7 @@ func FindParam(fn *ast.FuncDecl, name string) (*ast.Field, int) {
 	return nil, 0
 }
 
+
 /**
  * Modifies the return values of a function by mutating them into references and moving them to the parameters.
  * Example Go code: func f() (int, float) {}
@@ -284,6 +286,7 @@ func IsFuncPtr(expr ast.Expr) bool {
 	return false
 }
 
+
 func PrintSrcGoErr(p token.Pos, msg string) {
 	ASTCtxt.Err(errors.New("SourceGo :: " + ASTCtxt.FSet.PositionFor(p, false).String() + ": " + msg))
 }
@@ -351,7 +354,7 @@ func AddSrcGoTypes() {
 	 * func NewTypeName(pos token.Pos, pkg *Package, name string, typ Type) *TypeName
 	 * 
 	 * NewTypeName returns a new type name denoting the given typ. The remaining arguments set the attributes found with all Objects.
-	 * The typ argument may be a defined (Named) type or an alias type. It may also be nil such that the returned TypeName can be used as argument for NewNamed, which will set the TypeName's type as a side- effect.
+	 * The typ argument may be a defined (Named) type or an alias type. It may also be nil such that the returned TypeName can be used as argument for NewNamed, which will set the TypeName's type as a side-effect.
 	 * 
 	 * 
 	 * func NewNamed(obj *TypeName, underlying Type, methods []*Func) *Named
@@ -359,7 +362,7 @@ func AddSrcGoTypes() {
 	 * NewNamed returns a new named type for the given type name, underlying type, and associated methods. If the given type name obj doesn't have a type yet, its type is set to the returned named type. The underlying type must not be a *Named
 	 */
 	ASTCtxt.BuiltInTypes = make(map[string]types.Object)
-	//MakeTypeAlias("float",  types.Typ[types.Float64], false)
+	//MakeTypeAlias("float", types.Typ[types.Float64], false)
 	MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("__function__", types.Typ[types.UnsafePointer], nil)
 }
@@ -443,35 +446,6 @@ func AnalyzeIllegalCode(file *ast.File) {
 	})
 }
 
-
-/*
-func MergeRecvrs(file *ast.File) {
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n != nil {
-			switch f := n.(type) {
-				case *ast.FuncDecl:
-					/// merge receiver with the params and nullify it.
-					if f.Recv != nil {
-						f.Type.Params.List = append(f.Type.Params.List[:1], f.Type.Params.List[0:]...)
-						f.Type.Params.List[0] = f.Recv.List[0]
-						if type_expr := ASTCtxt.TypeInfo.TypeOf(f.Recv.List[0].Type); type_expr != nil {
-							type_name := type_expr.String()
-							type_name = strings.Replace(type_name, ".", "_", -1)
-							type_name = strings.Replace(type_name, " ", "_", -1)
-							
-							type_name = strings.TrimFunc(type_name, func(r rune) bool {
-								return !unicode.IsLetter(r) && r != rune('_')
-							})
-							f.Name.Name = type_name + "_" + f.Name.Name
-						}
-						f.Recv = nil
-					}
-			}
-		}
-		return true
-	})
-}
-*/
 
 func MergeRetVals(file *ast.File) {
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -673,26 +647,6 @@ func ExpandFuncPtrCalls(x *ast.CallExpr, retvals []ast.Expr, retTypes []types.Ty
 	return new_stmts
 }
 
-/*
-func MergeMethodCalls(file *ast.File) {
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n != nil {
-			switch x := n.(type) {
-				case *ast.CallExpr:
-					if caller, is_method_call := x.Fun.(*ast.SelectorExpr); is_method_call && !IsFuncPtr(x.Fun) {
-						/// check for *ast.SelectorExpr
-						x.Args = InsertExpr(x.Args, 0, caller.X)
-						if typ := ASTCtxt.TypeInfo.TypeOf(caller.X); typ != nil {
-							caller.Sel.Name = typ.String() + "_" + caller.Sel.Name
-						}
-						x.Fun = caller.Sel
-					}
-			}
-		}
-		return true
-	})
-}
-*/
 
 type (
 	StmtMutator  func(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator)
@@ -705,9 +659,7 @@ func MutateRets(file *ast.File) {
 	 * return m3() /// func m3() (type, type, type)
 	 * 
 	 * return int, float, m1() /// func m1() type
-	 * 
 	 */
-	
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 			case *ast.FuncDecl:
@@ -726,6 +678,7 @@ func MutateAssigns(file *ast.File) {
 			case *ast.FuncDecl:
 				ASTCtxt.CurrFunc = d
 				if d.Body != nil {
+					fmt.Printf("MutateAssigns :: Modifying function %s\n", d.Name.Name)
 					MutateBlock(d.Body, MutateAssignStmts)
 				}
 				ASTCtxt.CurrFunc = nil
@@ -736,8 +689,6 @@ func MutateAssigns(file *ast.File) {
 func MutateRanges(file *ast.File) {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
-			//case *ast.GenDecl:
-			//	AnalyzeGenDecl(d)
 			case *ast.FuncDecl:
 				ASTCtxt.CurrFunc = d
 				if d.Body != nil {
@@ -762,6 +713,35 @@ func MutateNoRetCalls(file *ast.File) {
 	}
 }
 
+func NameAnonFuncs(file **ast.File) {
+	/**
+	 * Function Literals can be represented in different ways:
+	 * 
+	 * f := func(params){
+	 *     code
+	 * }
+	 * f(args)
+	 * 
+	 * OR
+	 * 
+	 * func(params){
+	 *     code
+	 * }(args)
+	 */
+	ASTCtxt.CurrFile = file
+	for _, decl := range (*file).Decls {
+		switch d := decl.(type) {
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateFuncLit)
+				}
+				ASTCtxt.CurrFunc = nil
+		}
+	}
+	ASTCtxt.CurrFile = nil
+}
+
 func MutateBlock(b *ast.BlockStmt, mutator StmtMutator) {
 	for i, stmt := range b.List {
 		mutator(&b.List, i, stmt, MutateBlock)
@@ -772,7 +752,7 @@ func MutateRetStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutat
 	switch n := s.(type) {
 		case *ast.BlockStmt:
 			bm(n, MutateRetStmts)
-			
+		
 		case *ast.ForStmt:
 			if n.Init != nil {
 				MutateRetStmts(owner_list, index, n.Init, bm)
@@ -781,7 +761,7 @@ func MutateRetStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutat
 				MutateRetStmts(owner_list, index, n.Post, bm)
 			}
 			bm(n.Body, MutateRetStmts)
-			
+		
 		case *ast.IfStmt:
 			if n.Init != nil {
 				MutateRetStmts(owner_list, index, n.Init, bm)
@@ -790,8 +770,7 @@ func MutateRetStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutat
 			if n.Else != nil {
 				MutateRetStmts(owner_list, index, n.Else, bm)
 			}
-			
-			
+		
 		case *ast.ReturnStmt:
 			index := FindStmt(*owner_list, s)
 			res_len := len(n.Results)
@@ -872,12 +851,11 @@ func MutateRetStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutat
 }
 
 func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	fmt.Printf("MutateAssignStmts :: %T\n", s)
 	switch n := s.(type) {
 		case *ast.BlockStmt:
 			bm(n, MutateAssignStmts)
-			
-		case *ast.EmptyStmt:
-			
+		
 		case *ast.ForStmt:
 			if n.Init != nil {
 				MutateAssignStmts(owner_list, index, n.Init, bm)
@@ -886,7 +864,7 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 				MutateAssignStmts(owner_list, index, n.Post, bm)
 			}
 			bm(n.Body, MutateAssignStmts)
-			
+		
 		case *ast.IfStmt:
 			if n.Init != nil {
 				MutateAssignStmts(owner_list, index, n.Init, bm)
@@ -895,19 +873,19 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 			if n.Else != nil {
 				MutateAssignStmts(owner_list, index, n.Else, bm)
 			}
-			
+		
 		case *ast.SwitchStmt:
 			MutateAssignStmts(owner_list, index, n.Init, bm)
 			bm(n.Body, MutateAssignStmts)
-			
+		
 		case *ast.CaseClause:
 			for i, stmt := range n.Body {
 				MutateAssignStmts(&n.Body, i, stmt, bm)
 			}
-			
+		
 		case *ast.RangeStmt:
 			bm(n.Body, MutateAssignStmts)
-			
+		
 		case *ast.AssignStmt:
 			/**
 			 * a,b,c := f()
@@ -926,6 +904,7 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
 			fn, is_func_call := n.Rhs[0].(*ast.CallExpr)
 			if rite_len==1 && left_len >= rite_len && is_func_call {
+				fmt.Printf("ast.AssignStmt Mutator Func Call :: %+v\n", fn.Fun)
 				/// a func call returning multiple items as a decl + init.
 				switch n.Tok {
 					case token.DEFINE:
@@ -977,13 +956,15 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 							n.Rhs[0] = ret_tmp
 						} else {
 							/// transform the tuple return into a single return + pass by ref.
-							for _, l := range n.Lhs[1:] {
-								switch e := l.(type) {
+							for i:=1; i<left_len; i++ {
+								switch e := n.Lhs[i].(type) {
 									case *ast.Ident:
 										fn.Args = append(fn.Args, MakeReference(e))
 								}
 							}
-							n.Lhs = n.Lhs[:1]
+							if left_len > 1 {
+								n.Lhs = n.Lhs[:1]
+							}
 						}
 				}
 			}
@@ -993,45 +974,45 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 func MutateRangeStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
 	switch n := s.(type) {
 		case *ast.BlockStmt:
-			bm(n, MutateAssignStmts)
-			
+			bm(n, MutateRangeStmts)
+		
 		case *ast.EmptyStmt:
-			
+		
 		case *ast.ForStmt:
 			if n.Init != nil {
-				MutateAssignStmts(owner_list, index, n.Init, bm)
+				MutateRangeStmts(owner_list, index, n.Init, bm)
 			}
 			if n.Post != nil {
-				MutateAssignStmts(owner_list, index, n.Post, bm)
+				MutateRangeStmts(owner_list, index, n.Post, bm)
 			}
-			bm(n.Body, MutateAssignStmts)
-			
+			bm(n.Body, MutateRangeStmts)
+		
 		case *ast.IfStmt:
 			if n.Init != nil {
-				MutateAssignStmts(owner_list, index, n.Init, bm)
+				MutateRangeStmts(owner_list, index, n.Init, bm)
 			}
-			bm(n.Body, MutateAssignStmts)
+			bm(n.Body, MutateRangeStmts)
 			if n.Else != nil {
-				MutateAssignStmts(owner_list, index, n.Else, bm)
+				MutateRangeStmts(owner_list, index, n.Else, bm)
 			}
 		
 		case *ast.SwitchStmt:
-			MutateAssignStmts(owner_list, index, n.Init, bm)
-			bm(n.Body, MutateAssignStmts)
+			MutateRangeStmts(owner_list, index, n.Init, bm)
+			bm(n.Body, MutateRangeStmts)
 		
 		case *ast.CaseClause:
 			for i, stmt := range n.Body {
-				MutateAssignStmts(&n.Body, i, stmt, bm)
+				MutateRangeStmts(&n.Body, i, stmt, bm)
 			}
 		
 		case *ast.RangeStmt:
 			if n.Key != nil {
 				if iden, ok := n.Key.(*ast.Ident); ok && iden.Name=="_" {
-					n.Key = ast.NewIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+					n.Key = ast.NewIdent(fmt.Sprintf("%s_iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
 					ASTCtxt.RangeIter++
 				}
 			} else {
-				n.Key = ast.NewIdent(fmt.Sprintf("%s_Iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
+				n.Key = ast.NewIdent(fmt.Sprintf("%s_iter%d", ASTCtxt.CurrFunc.Name.Name, ASTCtxt.RangeIter))
 				ASTCtxt.RangeIter++
 			}
 			
@@ -1063,7 +1044,7 @@ func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 	switch n := s.(type) {
 		case *ast.BlockStmt:
 			bm(n, MutateNoRetCallStmts)
-			
+		
 		case *ast.ForStmt:
 			if n.Init != nil {
 				MutateNoRetCallStmts(owner_list, index, n.Init, bm)
@@ -1072,7 +1053,7 @@ func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 				MutateNoRetCallStmts(owner_list, index, n.Post, bm)
 			}
 			bm(n.Body, MutateNoRetCallStmts)
-			
+		
 		case *ast.IfStmt:
 			if n.Init != nil {
 				MutateNoRetCallStmts(owner_list, index, n.Init, bm)
@@ -1090,12 +1071,13 @@ func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 			for i, stmt := range n.Body {
 				MutateNoRetCallStmts(&n.Body, i, stmt, bm)
 			}
-			
+		
 		case *ast.RangeStmt:
-			bm(n.Body, MutateRangeStmts)
-			
+			bm(n.Body, MutateNoRetCallStmts)
+		
 		case *ast.ExprStmt:
 			if fn, is_func_call := n.X.(*ast.CallExpr); is_func_call {
+				fmt.Printf("ast.ExprStmt Mutator :: %+v\n", fn.Fun)
 				if typ := ASTCtxt.TypeInfo.TypeOf(fn); typ != nil {
 					switch t := typ.(type) {
 						case *types.Tuple:
@@ -1136,6 +1118,15 @@ func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 									}
 								}
 							}
+						
+						default:
+							if IsFuncPtr(fn) {
+								calls := ExpandFuncPtrCalls(fn, nil, nil)
+								n.X = calls[0].(*ast.ExprStmt).X
+								for i := len(calls)-1; i>0; i-- {
+									*owner_list = InsertStmt(*owner_list, FindStmt(*owner_list, n)+1, calls[i])
+								}
+							}
 					}
 				}
 			}
@@ -1166,26 +1157,134 @@ func MutateAndNotExpr(file *ast.File) {
 }
 
 
-func PrintNode(n ast.Node) string {
-	var ast_str string
-	ast.Inspect(n, func(n ast.Node) bool {
-		if n != nil {
-			ast_str += fmt.Sprintf("%p - %T:\t\t%+v", n, n, n) + "\n"
-		}
-		return true
-	})
-	return ast_str
+/// func(params){code}(args) => func _srcgo_func#(params){code} ... _srcgo_func#(args)
+func MutateFuncLit(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	switch n := s.(type) {
+		case *ast.BlockStmt:
+			bm(n, MutateFuncLit)
+		
+		case *ast.ForStmt:
+			if n.Init != nil {
+				MutateFuncLit(owner_list, index, n.Init, bm)
+			}
+			if n.Cond != nil {
+				MutateFuncLitExprs(&n.Cond, nil)
+			}
+			if n.Post != nil {
+				MutateFuncLit(owner_list, index, n.Post, bm)
+			}
+			bm(n.Body, MutateFuncLit)
+		
+		case *ast.IfStmt:
+			if n.Init != nil {
+				MutateFuncLit(owner_list, index, n.Init, bm)
+			}
+			MutateFuncLitExprs(&n.Cond, nil)
+			bm(n.Body, MutateFuncLit)
+			if n.Else != nil {
+				MutateFuncLit(owner_list, index, n.Else, bm)
+			}
+		
+		case *ast.SwitchStmt:
+			MutateFuncLit(owner_list, index, n.Init, bm)
+			MutateFuncLitExprs(&n.Tag, nil)
+			bm(n.Body, MutateFuncLit)
+		
+		case *ast.CaseClause:
+			for j := range n.List {
+				MutateFuncLitExprs(&n.List[j], nil)
+			}
+			for i, stmt := range n.Body {
+				MutateFuncLit(&n.Body, i, stmt, bm)
+			}
+		
+		case *ast.RangeStmt:
+			MutateFuncLitExprs(&n.Key, nil)
+			MutateFuncLitExprs(&n.Value, nil)
+			MutateFuncLitExprs(&n.X, nil)
+			bm(n.Body, MutateFuncLit)
+		
+		case *ast.ExprStmt:
+			MutateFuncLitExprs(&n.X, nil)
+		
+		case *ast.ReturnStmt:
+			for i := range n.Results {
+				MutateFuncLitExprs(&n.Results[i], nil)
+			}
+		
+		case *ast.AssignStmt:
+			for i := range n.Rhs {
+				MutateFuncLitExprs(&n.Rhs[i], nil)
+			}
+			for i := range n.Lhs {
+				MutateFuncLitExprs(&n.Lhs[i], nil)
+			}
+		
+		case *ast.DeclStmt:
+			g := n.Decl.(*ast.GenDecl)
+			for _, d := range g.Specs {
+				switch g.Tok {
+					case token.CONST, token.VAR:
+						v := d.(*ast.ValueSpec)
+						for expr := range v.Values {
+							MutateFuncLitExprs(&v.Values[expr], nil)
+						}
+				}
+			}
+	}
 }
 
-func PrintAST(f *ast.File) string {
-	var ast_str string
-	ast.Inspect(f, func(n ast.Node) bool {
+func MutateFuncLitExprs(e, prev *ast.Expr) {
+	if e==nil || *e == nil {
+		return
+	}
+	switch n := (*e).(type) {
+		case *ast.BinaryExpr:
+			MutateFuncLitExprs(&n.X, e)
+			MutateFuncLitExprs(&n.Y, e)
+		
+		case *ast.CallExpr:
+			MutateFuncLitExprs(&n.Fun, e)
+			for i := range n.Args {
+				MutateFuncLitExprs(&n.Args[i], e)
+			}
+		
+		case *ast.KeyValueExpr:
+			MutateFuncLitExprs(&n.Key, e)
+			MutateFuncLitExprs(&n.Value, e)
+		
+		case *ast.IndexExpr:
+			MutateFuncLitExprs(&n.X, e)
+			MutateFuncLitExprs(&n.Index, e)
+		
+		case *ast.UnaryExpr:
+			MutateFuncLitExprs(&n.X, e)
+		
+		case *ast.FuncLit:
+			tmp_func_name := ast.NewIdent(fmt.Sprintf("SrcGoTmpFunc%d", ASTCtxt.TmpFunc))
+			ASTCtxt.TmpFunc++
+			fn_decl := new(ast.FuncDecl)
+			fn_decl.Name = tmp_func_name
+			fn_decl.Type = n.Type
+			n.Type = nil
+			fn_decl.Body = n.Body
+			n.Body = nil
+			*e = tmp_func_name
+			
+			(*ASTCtxt.CurrFile).Decls = append((*ASTCtxt.CurrFile).Decls, fn_decl)
+	}
+}
+
+
+func PrintAST(n ast.Node) string {
+	var ast_str strings.Builder
+	ast.Inspect(n, func(n ast.Node) bool {
 		if n != nil {
-			ast_str += fmt.Sprintf("%p - %T:\t\t%+v", n, n, n) + "\n"
+			ast_str.WriteString(fmt.Sprintf("%p - %T:\t\t%+v", n, n, n) + "\n")
 		}
 		return true
 	})
-	return ast_str
+	return ast_str.String()
 }
 
 func PrettyPrintAST(n ast.Node) string {
