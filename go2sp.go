@@ -84,14 +84,14 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.37a")
+				fmt.Println("SourceGo version: v0.38a")
 			default:
 				new_file_name := fmt.Sprintf("%s.sp", argStr)
 				fset := token.NewFileSet()
 				code, err1 := ioutil.ReadFile(argStr)
 				CheckErr(err1)
 				/// parse the file and get a File AST Node.
-				file_ast, err2 := parser.ParseFile(fset, argStr, code, parser.AllErrors | parser.ParseComments)
+				file_ast, err2 := parser.ParseFile(fset, argStr, code, parser.AllErrors /*| parser.ParseComments*/)
 				if err2 != nil {
 					for _, e := range err2.(scanner.ErrorList) {
 						fmt.Println(e)
@@ -134,7 +134,7 @@ func main() {
 					/// first step: Analyze for illegal golang constructs.
 					ASTMod.AnalyzeIllegalCode(file_ast)
 					
-					ASTMod.NameAnonFuncs(&file_ast)
+					ASTMod.NameAnonFuncs(file_ast)
 					
 					/// Do initial type-check of the File AST Node so we can get type information.
 					if _, err := conf.Check(``, fset, ast_files, info); err != nil {
@@ -150,6 +150,8 @@ func main() {
 					ASTMod.MutateAndNotExpr(file_ast)
 					
 					ASTMod.MutateRets(file_ast)
+					
+					ASTMod.MutateAssignDefs(file_ast)
 					
 					ASTMod.MutateAssigns(file_ast)
 					

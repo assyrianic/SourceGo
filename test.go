@@ -96,8 +96,8 @@ func main() {
 	var origin Vec3
 	x,y,z := p.GetOrigin(&origin)
 	
-	//var k,l int
-	//k &^= l
+	var k,l int
+	k &^= l
 	
 	CB := IndirectMultiRet
 	p.PutInServer = func(client Entity) {
@@ -113,7 +113,6 @@ func main() {
 	}
 	
 	my_timer := CreateTimer(0.1, func(timer Timer, data any) Action {
-		data++
 		return Plugin_Continue
 	}, 0, 0)
 	
@@ -121,10 +120,16 @@ func main() {
 		return a + b
 	}(1, 2)
 	
+	inlined_call_res1,inlined_call_res2 := func(a,b int) (int,int) {
+		return a + b, a*b
+	}(1, 2)
+	
 	caller := func(a,b int) int {
 		return a + b
 	}
 	n := caller(1, 2)
+	
+	kv := CreateKeyValues("kek1", "kek_key", "kek_val")
 }
 
 func IndirectMultiRet() (bool, bool, bool) {
