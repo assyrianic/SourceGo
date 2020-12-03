@@ -28,14 +28,19 @@ import (
 	"strings"
 	"./srcgo/ast_transform"
 	"./srcgo/ast_to_sp"
+	"os/exec"
+	"runtime"
 )
 
 
 const (
-	Flag_Debug = (iota + 1) << 1
-	Flag_Force
+	OptFlagDebug = (iota + 1) << 1
+	OptFlagForce
+	OptFlagNoCompile
+	
 	ErrStr string = "[ERROR]"
 	WrnStr string = "[WARNING]"
+	//is64Bit = uint64(^uintptr(0)) == ^uint64(0)
 )
 
 
@@ -78,13 +83,15 @@ func main() {
 		var bad_compile bool
 		switch argStr {
 			case "--debug", "-dbg":
-				opts |= Flag_Debug
-			case "-file_ast", "--force", "--force-gen":
-				opts |= Flag_Force
+				opts |= OptFlagDebug
+			case "-f", "--force", "--force-gen":
+				opts |= OptFlagForce
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v0.38a")
+				fmt.Println("SourceGo version: v1.0b")
+			case "--no-spcomp", "-n":
+				opts |= OptFlagNoCompile
 			default:
 				new_file_name := fmt.Sprintf("%s.sp", argStr)
 				fset := token.NewFileSet()
@@ -107,7 +114,7 @@ func main() {
 						Importer: importer.Default(),
 						DisableUnusedImportCheck: true,
 						Error: func(err error) {
-							if strings.Contains(err.Error(), "could not import") {
+							if strings.Contains(err.Error(), "could not import") || strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") {
 							} else if strings.Contains(err.Error(), "declared but not used") {
 								fmt.Printf("%-20s %s\n", err, WrnStr)
 							} else {
@@ -162,18 +169,20 @@ func main() {
 					/// TODO: for for-loop inits that have multiple vars.
 					//ASTMod.MutateForInits(file_ast)
 					
+					//ASTMod.MutateMaps(file_ast)
+					
 					for _, e := range transpileErrs {
 						fmt.Printf("%-20s %s\n", e, ErrStr)
 					}
 					
 					conf.Check(``, fset, ast_files, info)
-					if opts & Flag_Debug > 0 {
+					if opts & OptFlagDebug > 0 {
 						WriteToFile(fmt.Sprintf("%s_AST.txt",   argStr), ASTMod.PrintAST(file_ast))
 						WriteToFile(fmt.Sprintf("%s_output.go", argStr), ASTMod.PrettyPrintAST(file_ast))
 					}
 				}
 				
-				if bad_compile && opts & Flag_Force==0 {
+				if bad_compile && opts & OptFlagForce==0 {
 					fmt.Println(fmt.Sprintf("SourceGo: file '%s' generation FAILED.", new_file_name))
 				} else {
 					final_code := GoToSPGen.GeneratePluginFile(file_ast)
@@ -182,6 +191,10 @@ func main() {
 						fmt.Println("SourceGo: transpiled " + new_file_name + " but might need correction.")
 					} else {
 						fmt.Println("SourceGo: successfully transpiled " + new_file_name)
+					}
+					
+					if opts & OptFlagNoCompile == 0 {
+						InvokeSPComp(argStr + ".sp")
 					}
 				}
 		}
@@ -206,4 +219,16 @@ func WriteToFile(filename, data string) error {
 		return err
 	}
 	return file.Sync()
+}
+
+func InvokeSPComp(file string) {
+	cmd_str := "compile"
+	if runtime.GOOS == "windows" {
+		cmd_str += ".bat"
+	} else {
+		cmd_str = fmt.Sprintf("./%s.sh", cmd_str)
+	}
+	cmd := exec.Command(cmd_str)
+	msg, _ := cmd.Output()
+	fmt.Printf("SourceGo::SPComp Invoked:: %s\n", string(msg))
 }

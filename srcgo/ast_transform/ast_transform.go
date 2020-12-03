@@ -455,8 +455,8 @@ func AnalyzeIllegalCode(file *ast.File) {
 					}
 				case *ast.TypeAssertExpr:
 					PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
-				//case *ast.SliceExpr:
-				//	PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
+				case *ast.SliceExpr:
+					PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
 			}
 		}
 		return true
@@ -950,8 +950,7 @@ func MutateAssignDefStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 			 *     Call_Finish(&a)
 			 */
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
-			if fn, is_func_call := n.Rhs[0].(*ast.CallExpr); rite_len==1 && left_len >= rite_len && is_func_call {
-				fmt.Printf("MutateAssignDefStmts Mutator Func Call :: %+v\n", fn.Fun)
+			if _, is_func_call := n.Rhs[0].(*ast.CallExpr); rite_len==1 && left_len >= rite_len && is_func_call {
 				/// a func call returning multiple items as a decl + init.
 				switch n.Tok {
 					case token.DEFINE:
@@ -1368,6 +1367,23 @@ func MutateFuncLitExprs(e *ast.Expr) {
 			ASTCtxt.NewDecls = append(ASTCtxt.NewDecls, fn_decl)
 	}
 }
+
+/*
+func MutateMaps(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			switch x := n.(type) {
+				case *ast.MapType:
+					if x.Op==token.AND_NOT {
+						x.Op = token.AND
+						x.Y = MakeBitNotExpr(MakeParenExpr(x.Y))
+					}
+			}
+		}
+		return true
+	})
+}
+*/
 
 
 func PrintAST(n ast.Node) string {

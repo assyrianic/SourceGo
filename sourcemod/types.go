@@ -15,6 +15,7 @@ package main
 
 type (
 	any       interface{}
+	Handle    handle
 	char      byte
 	Entity    = int
 )

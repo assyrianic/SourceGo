@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v0.38a
+v1.0 beta
 
 ## Introduction
 
@@ -90,12 +90,17 @@ public void OnPluginStart() {
 public void OnClientPutInServer(int client) {}
 ```
 
+* Anonymous Functions (aka Function Literals) are supported:
+```go
+my_timer := CreateTimer(2.0, func(timer Timer, data any) Action {
+	return Plugin_Continue
+}, 0, TIMER_REPEAT)
+```
+
 ### Planned Features
-* Generate Natives and an include file for them.
+* Generate Natives and Forwards with an include file for them.
 * Abstract, type-based syntax translation for higher data types like `StringMap` and `ArrayList`.
-* Abstract anonymous functions into name-generated functions. (perfect for abstracting timers)
 * Handle-based Data Structures are abstracted into supportive syntax such where it's `value = Map["key"]` instead of `map.GetValue("key", value);`
-* Func Methods for Entities and Vectors.
 
 ### Goal
 Generate SourcePawn source code that is compileable by `spcomp` without having to modify/assist the generate source code.
@@ -115,6 +120,8 @@ Command line options:
 * `--help`, `-h` - Prints help list.
 
 * `--version`, `-v` - Prints the version of SourceGo.
+
+* `--no-spcomp`, `-n` - Generates a SourcePawn sourcecode file without trying to invoke the SourcePawn compiler.
 
 If you need help or have any question, simply file an issue with **\[HELP\]** in the title.
 

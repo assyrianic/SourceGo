@@ -45,7 +45,7 @@ func GetCharBytes(source string) int
 func IsCharAlpha(chr int) bool
 func IsCharNumeric(chr int) bool
 func IsCharSpace(chr int) bool
-func IsCharMB(chr int) bool
+func IsCharMB(chr int) int
 func IsCharUpper(chr int) bool
 func IsCharLower(chr int) bool
 func StripQuotes(text string) bool

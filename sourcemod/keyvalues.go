@@ -50,7 +50,7 @@ func (KeyValues) SetColor(key string, r, g, b, a int)
 func (KeyValues) SetColor4(key string, color [4]int)
 func (KeyValues) SetVector(key string, vec Vec3)
 
-func (KeyValues) GetString(key string, value []char, maxlength string, defvalue string)
+func (KeyValues) GetString(key string, value []char, maxlength int, defvalue string)
 func (KeyValues) GetNum(key string, defvalue int) int
 func (KeyValues) GetFloat(key string, defvalue float) float
 func (KeyValues) GetColor(key string, r, g, b, a *int)
