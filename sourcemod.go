@@ -56,6 +56,8 @@ var MaxClients int
 
 const (
 	MAXPLAYERS = 65
+	PLAYERS_SIZE = MAXPLAYERS + 1
+	MAX_TF_PLAYERS = 35
 	MAXENTS = 2048
 )
 

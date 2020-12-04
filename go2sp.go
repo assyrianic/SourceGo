@@ -48,7 +48,7 @@ func DoImports(dir string, file *ast.File, fset *token.FileSet, pkgs map[string]
 	var ast_files []*ast.File
 	ast_files = append(ast_files, file)
 	for _, imp := range file.Imports {
-		file_to_import := dir + "/" + strings.Replace(imp.Path.Value, "\"", "", -1) + ".go"
+		file_to_import := dir + "/" + strings.Replace(imp.Path.Value, `"`, "", -1) + ".go"
 		if _, ok := pkgs[file_to_import]; ok {
 			/// prevent multiple importing.
 			continue
@@ -87,20 +87,20 @@ func main() {
 			case "-f", "--force", "--force-gen":
 				opts |= OptFlagForce
 			case "--help", "-h":
-				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version]")
+				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version, --no-spcomp]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v1.0b")
+				fmt.Println("SourceGo version: v1.1b")
 			case "--no-spcomp", "-n":
 				opts |= OptFlagNoCompile
 			default:
 				new_file_name := fmt.Sprintf("%s.sp", argStr)
 				fset := token.NewFileSet()
-				code, err1 := ioutil.ReadFile(argStr)
-				CheckErr(err1)
+				code, read_err := ioutil.ReadFile(argStr)
+				CheckErr(read_err)
 				/// parse the file and get a File AST Node.
-				file_ast, err2 := parser.ParseFile(fset, argStr, code, parser.AllErrors /*| parser.ParseComments*/)
-				if err2 != nil {
-					for _, e := range err2.(scanner.ErrorList) {
+				file_ast, parse_err := parser.ParseFile(fset, argStr, code, parser.AllErrors)
+				if parse_err != nil {
+					for _, e := range parse_err.(scanner.ErrorList) {
 						fmt.Println(e)
 					}
 					bad_compile = true

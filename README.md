@@ -1,9 +1,13 @@
 # Go2SourcePawn
-v1.0 beta
+v1.1 beta
 
 ## Introduction
 
 **Go2SourcePawn** is a transpiler that transforms a subset of Golang code to equivalent SourcePawn. The rationale behind Go2SourcePawn is to automate as much of the boilerplate possible when creating SourcePawn plugins.
+
+### Purpose
+
+To increase development time by using Golang's streamline engineered syntax.
 
 
 ### Features
@@ -96,6 +100,19 @@ my_timer := CreateTimer(2.0, func(timer Timer, data any) Action {
 	return Plugin_Continue
 }, 0, TIMER_REPEAT)
 ```
+
+* Inline SourcePawn code using the builtin function `__sp__` - for those parts of SourcePawn that just can't be generated (like using new or making a methodmap from scratch).
+
+`__sp__` only takes a single string of raw SourcePawn code.
+```go
+/// using raw string quotes here so that single & double quotes don't have to be escaped.
+var kv KeyValues
+__sp__(`kv = new KeyValues("key_value", "key", "val");`)
+
+...
+__sp__(`delete kv;`)
+```
+
 
 ### Planned Features
 * Generate Natives and Forwards with an include file for them.

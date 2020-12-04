@@ -382,6 +382,10 @@ func AddSrcGoTypes() {
 	//MakeTypeAlias("float", types.Typ[types.Float64], false)
 	MakeNamedType("handle", types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("__function__", types.Typ[types.UnsafePointer], nil)
+	
+	/// func __sp__(code string)
+	/// void __sp__(const char[] code);
+	MakeFunc("__sp__", nil, MakeParams([]string{"code"}, []types.Type{types.Typ[types.String]}), nil, false)
 }
 
 func SetUpSrcGo(fset *token.FileSet, info *types.Info, err_fn func(err error)) {
@@ -1151,7 +1155,7 @@ func MutateNoRetCallStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 			if n.Else != nil {
 				MutateNoRetCallStmts(owner_list, index, n.Else, bm)
 			}
-			
+		
 		case *ast.SwitchStmt:
 			MutateNoRetCallStmts(owner_list, index, n.Init, bm)
 			bm(n.Body, MutateNoRetCallStmts)
@@ -1367,24 +1371,19 @@ func MutateFuncLitExprs(e *ast.Expr) {
 			ASTCtxt.NewDecls = append(ASTCtxt.NewDecls, fn_decl)
 	}
 }
-
 /*
 func MutateMaps(file *ast.File) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		if n != nil {
 			switch x := n.(type) {
 				case *ast.MapType:
-					if x.Op==token.AND_NOT {
-						x.Op = token.AND
-						x.Y = MakeBitNotExpr(MakeParenExpr(x.Y))
-					}
+					
 			}
 		}
 		return true
 	})
 }
 */
-
 
 func PrintAST(n ast.Node) string {
 	var ast_str strings.Builder

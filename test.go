@@ -4,6 +4,7 @@ import (
 	"sourcemod"
 )
 
+
 var (
 	myself = Plugin{
 		name:        "SrcGo Plugin",
@@ -127,9 +128,32 @@ func main() {
 	caller := func(a,b int) int {
 		return a + b
 	}
-	n := caller(1, 2)
+	//n := caller(1, 2)
+	__sp__(`int n;
+	Call_StartFunction(null, caller);
+	Call_PushCell(1); Call_PushCell(2);
+	Call_Finish(n);`)
 	
-	kv := CreateKeyValues("kek1", "kek_key", "kek_val")
+	var kv KeyValues
+	/// using raw string quotes so we don't have to escape double quotes.
+	__sp__(`kv = new KeyValues("kek1", "kek_key", "kek_val");
+	delete kv;`)
+	
+	AddMultiTargetFilter("@!party", func(pattern string, clients Handle) bool {
+		non := StrContains(pattern, "!", false) != -1
+		for i:=MAX_TF_PLAYERS; i > 0; i-- {
+			__sp__(`if IsClientValid(i) && FindValueInArray(clients, i) == -1 {
+			if( g_cvars.enabled.BoolValue && g_dnd.IsGameMaster(i) ) {
+				if( !non ) {
+					PushArrayCell(clients, i);
+				}
+			} else if( non ) {
+				PushArrayCell(clients, i);
+			}
+		}`)
+		}
+		return true
+	}, "The D&D Quest Party", false)
 }
 
 func IndirectMultiRet() (bool, bool, bool) {
@@ -163,4 +187,57 @@ func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
 	/// Rotate it around the circle
 	xpos, ypos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0, ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
 	return
+}
+
+
+type MultiTargetFilter func(pattern string, clients Handle) bool
+func AddMultiTargetFilter(pattern string, filter MultiTargetFilter, phrase string, phraseIsML bool)
+
+func KeyValuesToStringMap(kv KeyValues, stringmap map[string][]char, hide_top bool, depth int, prefix *[]char) {
+	type SectStr = [128]char
+	for {
+		var section_name SectStr
+		kv.GetSectionName(section_name, len(section_name))
+		if kv.GotoFirstSubKey(false) {
+			var new_prefix SectStr
+			switch {
+				case depth==0 && hide_top:
+					new_prefix = ""
+				case prefix[0] == 0:
+					new_prefix = section_name
+				default:
+					FormatEx(new_prefix, len(new_prefix), "%s.%s", prefix, section_name)
+			}
+			KeyValuesToStringMap(kv, stringmap, hide_top, depth+1, new_prefix)
+            kv.GoBack()
+		} else {
+			if kv.GetDataType(NULL_STRING) != KvData_None {
+				var key SectStr
+				if prefix[0] == 0 {
+					key = section_name
+				} else {
+					FormatEx(key, len(key), "%s.%s", prefix, section_name)
+				}
+				
+				// lowercaseify the key
+				keylen := strlen(key)
+				for i := 0; i < keylen; i++ {
+					bytes := IsCharMB(key[i])
+					if bytes==0 {
+						key[i] = CharToLower(key[i])
+					} else {
+						i += (bytes - 1)
+					}
+				}
+				
+				var value SectStr
+				kv.GetString(NULL_STRING, value, len(value), NULL_STRING)
+				stringmap[key] = value
+			}
+		}
+		
+		if !kv.GotoNextKey(false) {
+			break
+		}
+	}
 }
