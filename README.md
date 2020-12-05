@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v1.1 beta
+v1.2 beta
 
 ## Introduction
 
@@ -24,8 +24,6 @@ Vec3   => float[3]
 ```
 
 * `#include <sourcemod>` and semicolon & new decls pragma are automatically added to each generated sourcepawn code file.
-
-* Sourcemod-based constants, functions, and types are automatically added as part of the universal Go scope.
 
 * Pattern matching where...
 

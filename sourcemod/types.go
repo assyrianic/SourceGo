@@ -15,7 +15,7 @@ package main
 
 type (
 	any       interface{}
-	Handle    handle
+	Handle    uintptr
 	char      byte
 	Entity    = int
 )

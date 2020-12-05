@@ -89,7 +89,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version, --no-spcomp]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v1.1b")
+				fmt.Println("SourceGo version: v1.2b")
 			case "--no-spcomp", "-n":
 				opts |= OptFlagNoCompile
 			default:

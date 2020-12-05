@@ -142,7 +142,7 @@ func main() {
 	AddMultiTargetFilter("@!party", func(pattern string, clients Handle) bool {
 		non := StrContains(pattern, "!", false) != -1
 		for i:=MAX_TF_PLAYERS; i > 0; i-- {
-			__sp__(`if IsClientValid(i) && FindValueInArray(clients, i) == -1 {
+			__sp__(`if( IsClientValid(i) && FindValueInArray(clients, i) == -1 ) {
 			if( g_cvars.enabled.BoolValue && g_dnd.IsGameMaster(i) ) {
 				if( !non ) {
 					PushArrayCell(clients, i);

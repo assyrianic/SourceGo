@@ -83,7 +83,10 @@ const (
 )
 
 const NULL_STRING string = ""
-var NULL_VECTOR [3]float    /// can't put NULL_VECTOR as 'const'.
+var (
+	NULL_VECTOR [3]float    /// can't put NULL_VECTOR as 'const'.
+	INVALID_FUNCTION __function__
+)
 
 
 func IsNullVector(vec [3]float) bool

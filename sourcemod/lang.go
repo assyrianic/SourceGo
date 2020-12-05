@@ -1,5 +1,5 @@
 /**
- * sourcemod/handles.go
+ * sourcemod/lang.go
  * 
  * Copyright 2020 Nirari Technologies, Alliedmodders LLC.
  * 
@@ -13,15 +13,17 @@
 
 package main
 
-import (
-	"sourcemod/types"
-)
 
-var (
-	INVALID_HANDLE Handle
-	null Handle /// in case people accidentally use 'null' in place of 'nil'.
-)
+const LANG_SERVER = 0
 
-func (Handle) Close()
-func CloseHandle(h Handle)
-func CloneHandle(h, plugin Handle) Handle
+func LoadTranslations(file string)
+func SetGlobalTransTarget(client Entity)
+func GetClientLanguage(client Entity) int
+func GetServerLanguage() int
+func GetLanguageCount() int
+func GetLanguageInfo(language int, code []char, codeLen int, name []char, nameLen int)
+func SetClientLanguage(client, language int)
+func GetLanguageByCode(code string) int
+func GetLanguageByName(code string) int
+func TranslationPhraseExists(phrase string) bool
+func IsTranslatedForLanguage(phrase string, language int) bool

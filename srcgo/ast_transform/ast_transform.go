@@ -379,8 +379,7 @@ func AddSrcGoTypes() {
 	 * NewNamed returns a new named type for the given type name, underlying type, and associated methods. If the given type name obj doesn't have a type yet, its type is set to the returned named type. The underlying type must not be a *Named
 	 */
 	ASTCtxt.BuiltInTypes = make(map[string]types.Object)
-	//MakeTypeAlias("float", types.Typ[types.Float64], false)
-	MakeNamedType("handle", types.Typ[types.UnsafePointer], nil)
+	//MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("__function__", types.Typ[types.UnsafePointer], nil)
 	
 	/// func __sp__(code string)

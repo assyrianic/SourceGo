@@ -13,6 +13,7 @@
 
 package main
 
+
 import (
 	"sourcemod/core"
 	"sourcemod/floats"
@@ -25,21 +26,21 @@ import (
 	"sourcemod/timers"
 	"sourcemod/admin"
 	"sourcemod/keyvalues"
+	"sourcemod/dbi"
+	"sourcemod/lang"
+	"sourcemod/sorting"
+	"sourcemod/textparse"
+	"sourcemod/clients"
+	"sourcemod/console"
+	"sourcemod/convars"
+	"sourcemod/events"
+	"sourcemod/bitbuffer"
+	"sourcemod/protobuf"
+	"sourcemod/usermessages"
+	"sourcemod/menus"
+	"sourcemod/halflife"
 	
 	/** TODO: Finish making SourceGo iface for these includes:
-		#include <dbi>
-		#include <lang>
-		#include <sorting>
-		#include <textparse>
-		#include <clients>
-		#include <console>
-		#include <convars>
-		#include <events>
-		#include <bitbuffer>
-		#include <protobuf>
-		#include <usermessages>
-		#include <menus>
-		#include <halflife>
 		#include <adt>
 		#include <banning>
 		#include <commandfilters>
@@ -52,16 +53,4 @@ import (
 )
 
 
-var MaxClients int
-
-const (
-	MAXPLAYERS = 65
-	PLAYERS_SIZE = MAXPLAYERS + 1
-	MAX_TF_PLAYERS = 35
-	MAXENTS = 2048
-)
-
-
-func IsClientInGame(client int) bool
-func PrintToServer(fmt string, args ...any)
 func IsValidEntity(ent Entity) bool

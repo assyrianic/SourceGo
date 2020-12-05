@@ -1,5 +1,5 @@
 /**
- * sourcemod/handles.go
+ * sourcemod/sorting.go
  * 
  * Copyright 2020 Nirari Technologies, Alliedmodders LLC.
  * 
@@ -13,15 +13,34 @@
 
 package main
 
-import (
-	"sourcemod/types"
+
+type SortOrder int
+const (
+	Sort_Ascending = SortOrder(0)     /**< Ascending order */
+	Sort_Descending    /**< Descending order */
+	Sort_Random         /**< Random order */
 )
 
-var (
-	INVALID_HANDLE Handle
-	null Handle /// in case people accidentally use 'null' in place of 'nil'.
+
+type SortType int
+const (
+	Sort_Integer = SortType(0)
+	Sort_Float
+	Sort_String
 )
 
-func (Handle) Close()
-func CloseHandle(h Handle)
-func CloneHandle(h, plugin Handle) Handle
+
+func SortIntegers(array []int, array_size int, order SortOrder)
+func SortFloats(array []float, array_size int, order SortOrder)
+func SortStrings(array [][]char, array_size int, order SortOrder)
+
+
+type SortFunc1D func(elem1, elem2 int, array []int, hndl Handle) int
+func SortCustom1D(array []int, array_size int, sorter SortFunc1D, hndl Handle)
+
+type SortFunc2D func(elem1, elem2 []any, array [][]any, hndl Handle)
+func SortCustom2D(array [][]any, array_size int, sorter SortFunc2D, hndl Handle)
+func SortADTArray(array Handle, order SortOrder, sorting SortType)
+
+type SortFuncADTArray func(index1, index2 int, array, hndl Handle)
+func SortADTArrayCustom(array Handle, sorter SortFuncADTArray, hndl Handle)
