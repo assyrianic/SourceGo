@@ -39,18 +39,125 @@ import (
 	"sourcemod/usermessages"
 	"sourcemod/menus"
 	"sourcemod/halflife"
-	
-	/** TODO: Finish making SourceGo iface for these includes:
-		#include <adt>
-		#include <banning>
-		#include <commandfilters>
-		#include <nextmap>
-		#include <commandline>
-		#include <helpers>
-		#include <entity>
-		#include <entity_prop_stocks>
-	*/
+	"sourcemod/adt_array"
+	"sourcemod/adt_trie"
+	"sourcemod/adt_stack"
+	"sourcemod/banning"
+	"sourcemod/commandfilters"
+	"sourcemod/nextmap"
+	"sourcemod/commandline"
+	"sourcemod/helpers"
+	"sourcemod/entity"
+	"sourcemod/entity_prop_stocks"
 )
 
 
-func IsValidEntity(ent Entity) bool
+type APLRes int
+const (
+	APLRes_Success = APLRes(0)     /**< Plugin should load */
+	APLRes_Failure         /**< Plugin shouldn't load and should display an error */
+	APLRes_SilentFailure    /**< Plugin shouldn't load but do so silently */
+)
+
+
+type GameData Handle
+
+func LoadGameConfigFile(file string) GameData
+func (GameData) GetOffset(key string) int
+func (GameData) GetKeyValue(key string, buffer []char, maxlen int) bool
+func (GameData) GetAddress(name string) Address
+
+func GetMyHandle() Handle
+func GetPluginIterator() Handle
+func MorePlugins(iter Handle) bool
+func ReadPlugin(iter Handle) Handle
+func GetPluginStatus(plugin Handle) PluginStatus
+func GetPluginFilename(plugin Handle, buffer []char, maxlength int)
+func IsPluginDebugging(plugin Handle) bool
+func GetPluginInfo(plugin Handle, info PluginInfo, buffer []char, maxlength int) bool
+func FindPluginByNumber(order_num int) Handle
+func SetFailState(state string, args ...any)
+func ThrowError(fmt string, args ...any)
+func LogStackTrace(fmt string, args ...any)
+func GetTime(bigStamp [2]int) int
+func FormatTime(buffer []char, maxlength int, format string, stamp int)
+func GetSysTickCount() int
+func AutoExecConfig(autoCreate bool, name, folder string)
+func RegPluginLibrary(name string)
+func LibraryExists(name string) bool
+func GetExtensionFileStatus(name string, err []char, maxlength int) int
+
+
+const (
+	MAPLIST_FLAG_MAPSFOLDER =    (1<<0)    /**< On failure, use all maps in the maps folder. */
+	MAPLIST_FLAG_CLEARARRAY =    (1<<1)    /**< If an input array is specified, clear it before adding. */
+	MAPLIST_FLAG_NO_DEFAULT =    (1<<2)    /**< Do not read "default" or "mapcyclefile" on failure. */
+)
+
+func ReadMapList(array ArrayList, serial *int, str string, flags int) ArrayList
+func SetMapListCompatBind(name, file string)
+
+
+type FeatureType int
+const (
+	/**
+	 * A native function call.
+	 */
+	FeatureType_Native = FeatureType(0)
+
+	/**
+	 * A named capability. This is distinctly different from checking for a
+	 * native, because the underlying functionality could be enabled on-demand
+	 * to improve loading time. Thus a native may appear to exist, but it might
+	 * be part of a set of features that are not compatible with the current game
+	 * or version of SourceMod.
+	 */
+	FeatureType_Capability
+)
+
+
+type FeatureStatus int
+const (
+	/**
+	 * Feature is available for use.
+	 */
+	FeatureStatus_Available = FeatureStatus(0)
+
+	/**
+	 * Feature is not available.
+	 */
+	FeatureStatus_Unavailable
+
+	/**
+	 * Feature is not known at all.
+	 */
+	FeatureStatus_Unknown
+)
+
+func CanTestFeatures() bool
+func GetFeatureStatus(ftr_type FeatureType, name string) FeatureStatus
+func RequireFeature(ftr_type FeatureType, name, fmt string, args ...any)
+
+
+type NumberType int
+const (
+    NumberType_Int8 = NumberType(0)
+    NumberType_Int16
+    NumberType_Int32
+)
+
+type Address int
+const Address_Null = Address(0)         // a typical invalid result when an address lookup fails
+
+func LoadFromAddress(addr Address, size NumberType) int
+func StoreToAddress(addr Address, data int, size NumberType)
+
+
+type FrameIterator struct {
+	LineNumber int
+}
+
+func (FrameIterator) Next() bool
+func (FrameIterator) Reset()
+func (FrameIterator) GetFunctionName(buffer []char, maxlen int)
+func (FrameIterator) GetFilePath(buffer []char, maxlen int)
