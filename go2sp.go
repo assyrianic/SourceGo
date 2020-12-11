@@ -40,6 +40,7 @@ const (
 	
 	ErrStr string = "[ERROR]"
 	WrnStr string = "[WARNING]"
+	FmtStr string = "%-100s %s\n"
 	//is64Bit = uint64(^uintptr(0)) == ^uint64(0)
 )
 
@@ -89,7 +90,7 @@ func main() {
 			case "--help", "-h":
 				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version, --no-spcomp]")
 			case "--version", "-v":
-				fmt.Println("SourceGo version: v1.2b")
+				fmt.Println("SourceGo version: v1.3b")
 			case "--no-spcomp", "-n":
 				opts |= OptFlagNoCompile
 			default:
@@ -116,7 +117,7 @@ func main() {
 						Error: func(err error) {
 							if strings.Contains(err.Error(), "could not import") || strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") {
 							} else if strings.Contains(err.Error(), "declared but not used") {
-								fmt.Printf("%-20s %s\n", err, WrnStr)
+								fmt.Printf(FmtStr, err, WrnStr)
 							} else {
 								typeErrs = append(typeErrs, err)
 								bad_compile = true
@@ -128,8 +129,8 @@ func main() {
 						Defs:       make(map[*ast.Ident]types.Object),
 						Uses:       make(map[*ast.Ident]types.Object),
 						Implicits:  make(map[ast.Node]types.Object),
-						Scopes:     make(map[ast.Node]*types.Scope),
-						Selections: make(map[*ast.SelectorExpr]*types.Selection),
+						//Scopes:     make(map[ast.Node]*types.Scope),
+						//Selections: make(map[*ast.SelectorExpr]*types.Selection),
 					}
 					
 					/// initialize our transpiler.
@@ -146,7 +147,7 @@ func main() {
 					/// Do initial type-check of the File AST Node so we can get type information.
 					if _, err := conf.Check(``, fset, ast_files, info); err != nil {
 						for _, e := range typeErrs {
-							fmt.Printf("%-20s %s\n", e, ErrStr)
+							fmt.Printf(FmtStr, e, ErrStr)
 						}
 					}
 					
@@ -172,7 +173,7 @@ func main() {
 					//ASTMod.MutateMaps(file_ast)
 					
 					for _, e := range transpileErrs {
-						fmt.Printf("%-20s %s\n", e, ErrStr)
+						fmt.Printf(FmtStr, e, ErrStr)
 					}
 					
 					conf.Check(``, fset, ast_files, info)
@@ -228,7 +229,8 @@ func InvokeSPComp(file string) {
 	} else {
 		cmd_str = fmt.Sprintf("./%s.sh", cmd_str)
 	}
-	cmd := exec.Command(cmd_str)
-	msg, _ := cmd.Output()
-	fmt.Printf("SourceGo::SPComp Invoked:: %s\n", string(msg))
+	
+	if msg, err := exec.Command(cmd_str).Output(); err==nil {
+		fmt.Printf("SourceGo::SPComp Invoked:: %s\n", string(msg))
+	}
 }

@@ -67,6 +67,7 @@ func (GameData) GetOffset(key string) int
 func (GameData) GetKeyValue(key string, buffer []char, maxlen int) bool
 func (GameData) GetAddress(name string) Address
 
+
 func GetMyHandle() Handle
 func GetPluginIterator() Handle
 func MorePlugins(iter Handle) bool
@@ -145,6 +146,7 @@ const (
     NumberType_Int16
     NumberType_Int32
 )
+
 
 type Address int
 const Address_Null = Address(0)         // a typical invalid result when an address lookup fails

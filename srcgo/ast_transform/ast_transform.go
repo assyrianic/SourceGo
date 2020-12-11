@@ -379,7 +379,6 @@ func AddSrcGoTypes() {
 	 * NewNamed returns a new named type for the given type name, underlying type, and associated methods. If the given type name obj doesn't have a type yet, its type is set to the returned named type. The underlying type must not be a *Named
 	 */
 	ASTCtxt.BuiltInTypes = make(map[string]types.Object)
-	//MakeNamedType("Handle", types.Typ[types.UnsafePointer], nil)
 	MakeNamedType("__function__", types.Typ[types.UnsafePointer], nil)
 	
 	/// func __sp__(code string)
@@ -460,6 +459,11 @@ func AnalyzeIllegalCode(file *ast.File) {
 					PrintSrcGoErr(x.Pos(), "Type Assertions are Illegal.")
 				case *ast.SliceExpr:
 					PrintSrcGoErr(x.Pos(), "Slice Expressions are Illegal.")
+				case *ast.MapType:
+					/// check if the key isn't 'string', only string keys are allowed.
+					if typ, is_ident := x.Key.(*ast.Ident); !is_ident || typ.Name != "string" {
+						PrintSrcGoErr(x.Pos(), "Non-string Maps are Illegal.")
+					}
 			}
 		}
 		return true
@@ -953,36 +957,39 @@ func MutateAssignDefStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 			 *     Call_Finish(&a)
 			 */
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
-			if _, is_func_call := n.Rhs[0].(*ast.CallExpr); rite_len==1 && left_len >= rite_len && is_func_call {
-				/// a func call returning multiple items as a decl + init.
-				switch n.Tok {
-					case token.DEFINE:
-						decl_stmt := new(ast.DeclStmt)
-						gen_decl := new(ast.GenDecl)
-						gen_decl.Tok = token.VAR
-						
-						/// first we get each name of a var and then map them to a type.
-						var_map := make(map[types.Type][]ast.Expr)
-						for _, e := range n.Lhs {
-							if type_expr := ASTCtxt.TypeInfo.TypeOf(e); type_expr != nil {
-								var_map[type_expr] = append(var_map[type_expr], e)
-							} else {
-								PrintSrcGoErr(n.TokPos, "Failed to expand assignment statement.")
-							}
+			if rite_len==1 && left_len >= rite_len {
+				switch n.Rhs[0].(type) {
+					case *ast.CallExpr /*, *ast.IndexExpr*/:
+						/// a func call returning multiple items as a decl + init.
+						switch n.Tok {
+							case token.DEFINE:
+								decl_stmt := new(ast.DeclStmt)
+								gen_decl := new(ast.GenDecl)
+								gen_decl.Tok = token.VAR
+								
+								/// first we get each name of a var and then map them to a type.
+								var_map := make(map[types.Type][]ast.Expr)
+								for _, e := range n.Lhs {
+									if type_expr := ASTCtxt.TypeInfo.TypeOf(e); type_expr != nil {
+										var_map[type_expr] = append(var_map[type_expr], e)
+									} else {
+										PrintSrcGoErr(n.TokPos, "Failed to expand assignment statement.")
+									}
+								}
+								
+								for key, val := range var_map {
+									val_spec := new(ast.ValueSpec)
+									for _, name := range val {
+										val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
+									}
+									val_spec.Type = TypeToASTExpr(key)
+									gen_decl.Specs = append(gen_decl.Specs, val_spec)
+								}
+								
+								decl_stmt.Decl = gen_decl
+								*owner_list = InsertStmt(*owner_list, 0, decl_stmt)
+								n.Tok = token.ASSIGN
 						}
-						
-						for key, val := range var_map {
-							val_spec := new(ast.ValueSpec)
-							for _, name := range val {
-								val_spec.Names = append(val_spec.Names, name.(*ast.Ident))
-							}
-							val_spec.Type = TypeToASTExpr(key)
-							gen_decl.Specs = append(gen_decl.Specs, val_spec)
-						}
-						
-						decl_stmt.Decl = gen_decl
-						*owner_list = InsertStmt(*owner_list, 0, decl_stmt)
-						n.Tok = token.ASSIGN
 				}
 			}
 	}
@@ -1025,38 +1032,46 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 		
 		case *ast.AssignStmt:
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
-			if fn, is_func_call := n.Rhs[0].(*ast.CallExpr); rite_len==1 && left_len >= rite_len && is_func_call {
-				/// a func call returning multiple items as a decl + init.
+			if rite_len==1 && left_len >= rite_len {
 				switch n.Tok {
 					case token.ASSIGN:
-						if IsFuncPtr(fn) {
-							ret_tmp := ast.NewIdent(fmt.Sprintf("fptr_temp%d", ASTCtxt.TmpVar))
-							ASTCtxt.TmpVar++
-							declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, n.Lhs[0], nil)
-							
-							retvals := make([]ast.Expr, 0)
-							retvals = append(retvals, ret_tmp)
-							for i:=1; i<left_len; i++ {
-								retvals = append(retvals, n.Lhs[i])
-							}
-							calls := ExpandFuncPtrCalls(fn, retvals, nil)
-							calls = InsertStmt(calls, 0, declstmt)
-							for i := len(calls)-1; i>=0; i-- {
-								*owner_list = InsertStmt(*owner_list, index, calls[i])
-							}
-							n.Lhs = n.Lhs[:1]
-							n.Rhs[0] = ret_tmp
-						} else {
-							/// transform the tuple return into a single return + pass by ref.
-							for i:=1; i<left_len; i++ {
-								switch e := n.Lhs[i].(type) {
-									case *ast.Ident:
-										fn.Args = append(fn.Args, MakeReference(e))
+						switch fn := n.Rhs[0].(type) {
+							case *ast.CallExpr:
+								/// a func call returning multiple items as a decl + init.
+								if IsFuncPtr(fn) {
+									ret_tmp := ast.NewIdent(fmt.Sprintf("fptr_temp%d", ASTCtxt.TmpVar))
+									ASTCtxt.TmpVar++
+									declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, n.Lhs[0], nil)
+									
+									retvals := make([]ast.Expr, 0)
+									retvals = append(retvals, ret_tmp)
+									for i:=1; i<left_len; i++ {
+										retvals = append(retvals, n.Lhs[i])
+									}
+									calls := ExpandFuncPtrCalls(fn, retvals, nil)
+									calls = InsertStmt(calls, 0, declstmt)
+									for i := len(calls)-1; i>=0; i-- {
+										*owner_list = InsertStmt(*owner_list, index, calls[i])
+									}
+									n.Lhs = n.Lhs[:1]
+									n.Rhs[0] = ret_tmp
+								} else {
+									/// transform the tuple return into a single return + pass by ref.
+									for i:=1; i<left_len; i++ {
+										switch e := n.Lhs[i].(type) {
+											case *ast.Ident:
+												fn.Args = append(fn.Args, MakeReference(e))
+										}
+									}
+									if left_len > 1 {
+										n.Lhs = n.Lhs[:1]
+									}
 								}
-							}
-							if left_len > 1 {
-								n.Lhs = n.Lhs[:1]
-							}
+							/*
+							case *ast.IndexExpr:
+								/// value, found = map[str]
+								/// Becomes: found = map.GetValue(str, &value)
+								*/
 						}
 				}
 			}
@@ -1370,19 +1385,130 @@ func MutateFuncLitExprs(e *ast.Expr) {
 			ASTCtxt.NewDecls = append(ASTCtxt.NewDecls, fn_decl)
 	}
 }
+
 /*
 func MutateMaps(file *ast.File) {
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n != nil {
-			switch x := n.(type) {
-				case *ast.MapType:
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+			case *ast.FuncDecl:
+				ASTCtxt.CurrFunc = d
+				if d.Body != nil {
+					MutateBlock(d.Body, MutateMapExprs)
+				}
+				ASTCtxt.CurrFunc = nil
+		}
+	}
+}
+
+func MutateMapExprs(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMutator) {
+	switch n := s.(type) {
+		case *ast.BlockStmt:
+			bm(n, MutateMapExprs)
+		
+		case *ast.ForStmt:
+			if n.Init != nil {
+				MutateMapExprs(owner_list, index, n.Init, bm)
+			}
+			if n.Cond != nil {
+				MutateFuncLitExprs(&n.Cond)
+			}
+			if n.Post != nil {
+				MutateMapExprs(owner_list, index, n.Post, bm)
+			}
+			bm(n.Body, MutateMapExprs)
+		
+		case *ast.IfStmt:
+			if n.Init != nil {
+				MutateMapExprs(owner_list, index, n.Init, bm)
+			}
+			MutateFuncLitExprs(&n.Cond)
+			bm(n.Body, MutateMapExprs)
+			if n.Else != nil {
+				MutateMapExprs(owner_list, index, n.Else, bm)
+			}
+		
+		case *ast.SwitchStmt:
+			MutateMapExprs(owner_list, index, n.Init, bm)
+			MutateMapExpr(&n.Tag)
+			bm(n.Body, MutateMapExprs)
+		
+		case *ast.CaseClause:
+			for j := range n.List {
+				MutateMapExpr(&n.List[j])
+			}
+			for i, stmt := range n.Body {
+				MutateMapExprs(&n.Body, i, stmt, bm)
+			}
+		
+		case *ast.RangeStmt:
+			MutateMapExpr(&n.Key)
+			MutateMapExpr(&n.Value)
+			MutateMapExpr(&n.X)
+			bm(n.Body, MutateMapExprs)
+		
+		case *ast.ExprStmt:
+			MutateMapExpr(&n.X)
+		
+		case *ast.ReturnStmt:
+			for i := range n.Results {
+				MutateMapExpr(&n.Results[i])
+			}
+		
+		case *ast.AssignStmt:
+			for i := range n.Rhs {
+				MutateMapExpr(&n.Rhs[i])
+			}
+			for i := range n.Lhs {
+				MutateMapExpr(&n.Lhs[i])
+			}
+		
+		case *ast.DeclStmt:
+			g := n.Decl.(*ast.GenDecl)
+			for _, d := range g.Specs {
+				switch g.Tok {
+					case token.CONST, token.VAR:
+						v := d.(*ast.ValueSpec)
+						for expr := range v.Values {
+							MutateMapExpr(&v.Values[expr])
+						}
+				}
+			}
+	}
+}
+
+func MutateMapExpr(e *ast.Expr) {
+	if e==nil || *e == nil {
+		return
+	}
+	switch n := (*e).(type) {
+		case *ast.BinaryExpr:
+			MutateMapExpr(&n.X)
+			MutateMapExpr(&n.Y)
+		
+		case *ast.CallExpr:
+			MutateMapExpr(&n.Fun)
+			for i := range n.Args {
+				MutateMapExpr(&n.Args[i])
+			}
+		
+		case *ast.KeyValueExpr:
+			MutateMapExpr(&n.Key)
+			MutateMapExpr(&n.Value)
+		
+		case *ast.IndexExpr:
+			//MutateMapExpr(&n.X)
+			if typ := ASTCtxt.TypeInfo.TypeOf(n.X); typ != nil {
+				case *types.Map:
 					
 			}
-		}
-		return true
-	})
+			MutateMapExpr(&n.Index)
+		
+		case *ast.UnaryExpr:
+			MutateMapExpr(&n.X)
+	}
 }
 */
+
 
 func PrintAST(n ast.Node) string {
 	var ast_str strings.Builder

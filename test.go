@@ -2,6 +2,7 @@ package main
 
 import (
 	"sourcemod"
+	"sdktools"
 )
 
 
@@ -27,6 +28,7 @@ const (
 	d string = "D"
 	e = "e1"
 	f = 1.00
+	MakeStrMap = "StringMap smap = new StringMap();"
 )
 
 type (
@@ -47,7 +49,7 @@ type (
 	}
 	
 	Kektus    func(i, x  Vec3,  b    string, blocks        *Name, KC *int) Handle
-	EventFunc func(event Event, name string, dontBroadcast bool)           Action
+	EventFunc func(event *Event, name string, dontBroadcast bool)           Action
 	VecFunc   func(vec Vec3) (float, float, float)
 )
 
@@ -129,7 +131,8 @@ func main() {
 		return a + b
 	}
 	//n := caller(1, 2)
-	__sp__(`int n;
+	__sp__(`
+	int n;
 	Call_StartFunction(null, caller);
 	Call_PushCell(1); Call_PushCell(2);
 	Call_Finish(n);`)
@@ -139,21 +142,23 @@ func main() {
 	__sp__(`kv = new KeyValues("kek1", "kek_key", "kek_val");
 	delete kv;`)
 	
-	AddMultiTargetFilter("@!party", func(pattern string, clients Handle) bool {
+	AddMultiTargetFilter("@!party", func(pattern string, clients ArrayList) bool {
 		non := StrContains(pattern, "!", false) != -1
 		for i:=MAX_TF_PLAYERS; i > 0; i-- {
-			__sp__(`if( IsClientValid(i) && FindValueInArray(clients, i) == -1 ) {
+		__sp__(`if( IsClientValid(i) && clients.FindValue(i) == -1 ) {
 			if( g_cvars.enabled.BoolValue && g_dnd.IsGameMaster(i) ) {
 				if( !non ) {
-					PushArrayCell(clients, i);
+					clients.Push(i);
 				}
 			} else if( non ) {
-				PushArrayCell(clients, i);
+				clients.Push(i);
 			}
 		}`)
 		}
 		return true
 	}, "The D&D Quest Party", false)
+	
+	__sp__(MakeStrMap)
 }
 
 func IndirectMultiRet() (bool, bool, bool) {
@@ -188,10 +193,6 @@ func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
 	xpos, ypos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0, ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
 	return
 }
-
-
-type MultiTargetFilter func(pattern string, clients Handle) bool
-func AddMultiTargetFilter(pattern string, filter MultiTargetFilter, phrase string, phraseIsML bool)
 
 func KeyValuesToStringMap(kv KeyValues, stringmap map[string][]char, hide_top bool, depth int, prefix *[]char) {
 	type SectStr = [128]char
