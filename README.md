@@ -112,6 +112,15 @@ __sp__(`kv = new KeyValues("key_value", "key", "val");`)
 __sp__(`delete kv;`)
 ```
 
+* `make` for _making_ dynamically sized, local arrays:
+```go
+my_str := make([]char, size)
+```
+becomes:
+```c
+char[] my_str = new char[size];
+```
+
 
 ### Planned Features
 * Generate Natives and Forwards with an include file for them.
