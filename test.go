@@ -159,6 +159,9 @@ func main() {
 	}, "The D&D Quest Party", false)
 	
 	__sp__(MakeStrMap)
+	
+	new_str := make([]char, 100)
+	new_kek := make([]int, inlined_call_res)
 }
 
 func IndirectMultiRet() (bool, bool, bool) {
@@ -188,7 +191,7 @@ func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
 	xpos, ypos = 360.0 * -front, 360.0 * -side
 	flRotation := (ArcTangent2(xpos, ypos) + FLOAT_PI) * (57.29577951)
 	yawRadians := -flRotation * 0.017453293
-
+	
 	/// Rotate it around the circle
 	xpos, ypos = ( 500 + (360.0 * Cosine(yawRadians)) ) / 1000.0, ( 500 - (360.0 * Sine(yawRadians)) ) / 1000.0
 	return

@@ -260,6 +260,31 @@ func MutateRetTypes(retvals **ast.FieldList, curr_params *ast.FieldList, obj_nam
 	return new_params
 }
 
+func IsMapType(expr ast.Expr) bool {
+	if expr != nil {
+		switch e := expr.(type) {
+			case *ast.SelectorExpr:
+				return IsMapType(e.Sel)
+			case *ast.IndexExpr:
+				return IsMapType(e.X)
+			case *ast.Ident:
+				for k, v := range ASTCtxt.TypeInfo.Defs {
+					if k.Name==e.Name {
+						typ_str := v.String()
+						is_var := strings.Contains(typ_str, "var ") || strings.Contains(typ_str, "field ")
+						if is_var && strings.Contains(typ_str, "map") {
+							return true
+						}
+					}
+				}
+				return false
+			default:
+				break
+		}
+	}
+	return false
+}
+
 func IsFuncPtr(expr ast.Expr) bool {
 	if expr != nil {
 		switch e := expr.(type) {
@@ -958,8 +983,20 @@ func MutateAssignDefStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm Bloc
 			 */
 			left_len, rite_len := len(n.Lhs), len(n.Rhs)
 			if rite_len==1 && left_len >= rite_len {
-				switch n.Rhs[0].(type) {
-					case *ast.CallExpr /*, *ast.IndexExpr*/:
+				switch e := n.Rhs[0].(type) {
+					case *ast.CallExpr:
+						if iden, is_ident := e.Fun.(*ast.Ident); is_ident && iden.Name=="make" {
+							arg_len := len(e.Args)
+							switch {
+								case arg_len > 2:
+									PrintSrcGoErr(n.TokPos, "'make' has too many arguments.")
+								case arg_len < 2:
+									PrintSrcGoErr(n.TokPos, "'make' has too few arguments.")
+								case left_len > 1:
+									PrintSrcGoErr(n.TokPos, "'make' only returns one value.")
+							}
+							return
+						}
 						/// a func call returning multiple items as a decl + init.
 						switch n.Tok {
 							case token.DEFINE:
@@ -1071,7 +1108,23 @@ func MutateAssignStmts(owner_list *[]ast.Stmt, index int, s ast.Stmt, bm BlockMu
 							case *ast.IndexExpr:
 								/// value, found = map[str]
 								/// Becomes: found = map.GetValue(str, &value)
-								*/
+								if typ := ASTCtxt.TypeInfo.TypeOf(fn.X); typ != nil {
+									switch t := typ.(type) {
+										case *types.Map:
+											ret_tmp := ast.NewIdent(fmt.Sprintf("map_value%d", ASTCtxt.TmpVar))
+											ASTCtxt.TmpVar++
+											declstmt := MakeVarDecl([]*ast.Ident{ret_tmp}, nil, t.Elem())
+											
+											new_stmts := make([]ast.Stmt, 0)
+											map_access := new(ast.CallExpr)
+											switch elem_typ := t.Elem().(type) {
+												case 
+												map_access.Fun = ast.NewIdent("GetValue")
+											
+											map_access.Args = append(Call_StartFunction.Args, ast.NewIdent("nil"))
+											map_access.Args = append(Call_StartFunction.Args, x.Fun)
+								}
+							*/
 						}
 				}
 			}

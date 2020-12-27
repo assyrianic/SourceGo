@@ -1,5 +1,5 @@
 # Go2SourcePawn
-v1.3 beta
+v1.4 beta
 
 ## Introduction
 

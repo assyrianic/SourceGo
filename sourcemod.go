@@ -149,7 +149,7 @@ const (
 
 
 type Address int
-const Address_Null = Address(0)         // a typical invalid result when an address lookup fails
+const Address_Null = Address(0)    /// a typical invalid result when an address lookup fails
 
 func LoadFromAddress(addr Address, size NumberType) int
 func StoreToAddress(addr Address, data int, size NumberType)

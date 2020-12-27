@@ -327,52 +327,202 @@ func TR_PointOutsideWorld(pos *Vec3) bool
 
 
 /** sdktools_tempents */
+type TEHook func(te_name string, players []int, numClients int, delay float) Action
 
+func AddTempEntHook(te_name string, hook TEHook)
+func RemoveTempEntHook(te_name string, hook TEHook)
+func TE_Start(te_name string)
+func TE_IsValidProp(prop string) bool
+func TE_WriteNum(prop string, value int)
+func TE_ReadNum(prop string) int
+func TE_WriteFloat(prop string, value float)
+func TE_ReadFloat(prop string) float
+func TE_WriteVector(prop string, vec Vec3)
+func TE_ReadVector(prop string, vec *Vec3)
+func TE_WriteAngles(prop string, angles Vec3)
+func TE_WriteFloatArray(prop string, array []float, arraySize int)
+func TE_Send(clients []int, numClients int, delay float)
+func TE_WriteEncodedEnt(prop string, value int)
+func TE_SendToAll(delay float)
+func TE_SendToClient(client int, delay float)
+func TE_SendToAllInRange(origin Vec3, rangeType ClientRangeType, delay float)
 /**********************/
 
 
 /** sdktools_tempents_stocks */
+const (
+	TE_EXPLFLAG_NONE =            0x0   /**< all flags clear makes default Half-Life explosion */
+	TE_EXPLFLAG_NOADDITIVE =      0x1   /**< sprite will be drawn opaque (ensure that the sprite you send is a non-additive sprite) */
+	TE_EXPLFLAG_NODLIGHTS =       0x2   /**< do not render dynamic lights */
+	TE_EXPLFLAG_NOSOUND =         0x4   /**< do not play client explosion sound */
+	TE_EXPLFLAG_NOPARTICLES =     0x8   /**< do not draw particles */
+	TE_EXPLFLAG_DRAWALPHA =       0x10  /**< sprite will be drawn alpha */
+	TE_EXPLFLAG_ROTATE =          0x20  /**< rotate the sprite randomly */
+	TE_EXPLFLAG_NOFIREBALL =      0x40  /**< do not draw a fireball */
+	TE_EXPLFLAG_NOFIREBALLSMOKE = 0x80  /**< do not draw smoke with the fireball */
+	
+	
+	FBEAM_STARTENTITY =   0x00000001
+	FBEAM_ENDENTITY =     0x00000002
+	FBEAM_FADEIN =        0x00000004
+	FBEAM_FADEOUT =       0x00000008
+	FBEAM_SINENOISE =     0x00000010
+	FBEAM_SOLID =         0x00000020
+	FBEAM_SHADEIN =       0x00000040
+	FBEAM_SHADEOUT =      0x00000080
+	FBEAM_ONLYNOISEONCE = 0x00000100  /**< Only calculate our noise once */
+	FBEAM_NOTILE =        0x00000200
+	FBEAM_USE_HITBOXES =  0x00000400  /**< Attachment indices represent hitbox indices instead when this is set. */
+	FBEAM_STARTVISIBLE =  0x00000800  /**< Has this client actually seen this beam's start entity yet? */
+	FBEAM_ENDVISIBLE =    0x00001000  /**< Has this client actually seen this beam's end entity yet? */
+	FBEAM_ISACTIVE =      0x00002000
+	FBEAM_FOREVER =       0x00004000
+	FBEAM_HALOBEAM =      0x00008000  /**< When drawing a beam with a halo, don't ignore the segments and endwidth */
+)
 
+func TE_SetupSparks(pos, dir Vec3, Magnitude, TrailLength int)
+func TE_SetupSmoke(pos Vec3, Model int, Scale float, FrameRate int)
+func TE_SetupDust(pos, dir Vec3, Size, Speed float)
+func TE_SetupMuzzleFlash(pos, angles Vec3, Scale float, Type int)
+func TE_SetupMetalSparks(pos, dir Vec3)
+func TE_SetupEnergySplash(pos, dir Vec3, Explosive bool)
+func TE_SetupArmorRicochet(pos, dir Vec3)
+func TE_SetupGlowSprite(pos Vec3, Model int, Life, Size float, Brightness int)
+
+func TE_SetupExplosion(pos Vec3, Model int, Scale float, Framerate, Flags, Radius, Magnitude int, normal Vec3, MaterialType int)
+
+func TE_SetupBloodSprite(pos, dir Vec3, color [4]int, Size, SprayModel, BloodDropModel int)
+
+func TE_SetupBeamRingPoint(center Vec3, Start_Radius, End_Radius float, ModelIndex, HaloIndex, StartFrame, FrameRate int, Life, Width, Amplitude float, Color [4]int, Speed, Flags int)
+
+func TE_SetupBeamPoints(start, end Vec3, ModelIndex, HaloIndex, StartFrame, FrameRate int, Life, Width, EndWidth float, FadeLength int, Amplitude float, Color [4]int, Speed int)
+
+func TE_SetupBeamLaser(StartEntity, EndEntity, ModelIndex, HaloIndex, StartFrame, FrameRate int, Life, Width, EndWidth float, FadeLength int, Amplitude float, Color [4]int, Speed int)
+
+func TE_SetupBeamRing(StartEntity, EndEntity, ModelIndex, HaloIndex, StartFrame, FrameRate int, Life, Width, Amplitude float, Color [4]int, Speed, Flags int)
+
+func TE_SetupBeamFollow(EntIndex, ModelIndex, HaloIndex int, Life, Width, EndWidth float, FadeLength int, Color [4]int)
 /*****************************/
 
 
 /** sdktools_voice */
+const (
+	VOICE_NORMAL =        0   /**< Allow the client to listen and speak normally. */
+	VOICE_MUTED =         1   /**< Mutes the client from speaking to everyone. */
+	VOICE_SPEAKALL =      2   /**< Allow the client to speak to everyone. */
+	VOICE_LISTENALL =     4   /**< Allow the client to listen to everyone. */
+	VOICE_TEAM =          8   /**< Allow the client to always speak to team, even when dead. */
+	VOICE_LISTENTEAM =    16  /**< Allow the client to always hear teammates, including dead ones. */
+)
 
+type ListenOverride int
+const (
+	Listen_Default = ListenOverride(0) /**< Leave it up to the game */
+	Listen_No          /**< Can't hear */
+	Listen_Yes          /**< Can hear */
+)
+
+func SetClientListeningFlags(client, flags int)
+func GetClientListeningFlags(client Entity) int
+func SetListenOverride(Receiver, Sender int, override ListenOverride) bool
+func GetListenOverride(Receiver, Sender int) ListenOverride
+func IsClientMuted(Muter, Mutee int) bool
 /*******************/
 
 
 /** sdktools_variant_t */
-
+func SetVariantBool(val bool)
+func SetVariantString(val string)
+func SetVariantInt(val int)
+func SetVariantFloat(val float)
+func SetVariantVector3D(val Vec3)
+func SetVariantPosVector3D(val Vec3)
+func SetVariantColor(val [4]int)
+func SetVariantEntity(val Entity)
 /***********************/
 
 
 /** sdktools_entinput */
-
+func AcceptEntityInput(dest Entity, input string, activator, caller Entity, outputid int) bool
 /**********************/
 
 
 /** sdktools_entoutput */
+type EntityOutput func(output string, caller, activator Entity, delay float) Action
 
+func HookEntityOutput(classname, output string, callback EntityOutput)
+func UnhookEntityOutput(classname, output string, callback EntityOutput)
+func HookSingleEntityOutput(entity Entity, output string, callback EntityOutput, once bool)
+func UnhookSingleEntityOutput(entity Entity, output string, callback EntityOutput) bool
+func FireEntityOutput(caller Entity, output string, activator Entity, delay float)
 /***********************/
 
 
 /** sdktools_hooks */
-
+const FEATURECAP_PLAYERRUNCMD_11PARAMS string = "SDKTools PlayerRunCmd 11Params"
 /*******************/
 
 
 /** sdktools_gamerules */
+type RoundState int
+const (
+	// initialize the game, create teams
+	RoundState_Init = RoundState(0)
+	
+	// Before players have joined the game. Periodically checks to see if enough players are ready
+	// to start a game. Also reverts to this when there are no active players
+	RoundState_Pregame
+	
+	// The game is about to start, wait a bit and spawn everyone
+	RoundState_StartGame
+	
+	// All players are respawned, frozen in place
+	RoundState_Preround
+	
+	// Round is on, playing normally
+	RoundState_RoundRunning
+	
+	// Someone has won the round
+	RoundState_TeamWin
+	
+	// Noone has won, manually restart the game, reset scores
+	RoundState_Restart
+	
+	// Noone has won, restart the game
+	RoundState_Stalemate
+	
+	// Game is over, showing the scoreboard etc
+	RoundState_GameOver
+	
+	// Game is over, doing bonus round stuff
+	RoundState_Bonus
+	
+	// Between rounds
+	RoundState_BetweenRounds
+)
 
+func GameRules_GetProp(prop string, size, element int) int
+func GameRules_SetProp(prop string, value any, size, element int, changeState bool)
+func GameRules_GetPropFloat(prop string, element int) float
+func GameRules_SetPropFloat(prop string, value float, element int, changeState bool)
+func GameRules_GetPropEnt(prop string, element int) Entity
+func GameRules_SetPropEnt(prop string, other Entity, element int, changeState bool)
+func GameRules_GetPropVector(prop string, vec *Vec3, element int)
+func GameRules_SetPropVector(prop string, vec Vec3, element int, changeState bool)
+func GameRules_GetPropString(prop string, buffer []char, maxlen int) int
+func GameRules_SetPropString(prop, buffer string, changeState bool) int
+func GameRules_GetRoundState() RoundState
 /***********************/
 
 
 /** sdktools_client */
-
+func InactivateClient(client Entity)
+func ReconnectClient(client Entity)
 /********************/
 
 
 /** sdktools_stocks */
-
+func FindTeamByName(name string) int
 /********************/
 
 

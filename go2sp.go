@@ -34,9 +34,10 @@ import (
 
 
 const (
-	OptFlagDebug = (iota + 1) << 1
+	OptFlagDebug = 1 << iota
 	OptFlagForce
 	OptFlagNoCompile
+	OptFlagVerbose
 	
 	ErrStr string = "[ERROR]"
 	WrnStr string = "[WARNING]"
@@ -83,14 +84,16 @@ func main() {
 	for _, argStr := range srcgo_args {
 		var bad_compile bool
 		switch argStr {
-			case "--debug", "-dbg":
+			case "--debug", "-d":
 				opts |= OptFlagDebug
 			case "-f", "--force", "--force-gen":
 				opts |= OptFlagForce
 			case "--help", "-h":
-				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version, --no-spcomp]")
-			case "--version", "-v":
-				fmt.Println("SourceGo version: v1.3b")
+				fmt.Println("SourceGo Usage: " + os.Args[0] + " [options] files... | options: [--debug, --force, --help, --version, --no-spcomp, --verbose]")
+			case "--version":
+				fmt.Println("SourceGo version: v1.4b")
+			case "--verbose", "-v":
+				opts |= OptFlagVerbose
 			case "--no-spcomp", "-n":
 				opts |= OptFlagNoCompile
 			default:
@@ -115,7 +118,11 @@ func main() {
 						Importer: importer.Default(),
 						DisableUnusedImportCheck: true,
 						Error: func(err error) {
-							if strings.Contains(err.Error(), "could not import") || strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") {
+							if strings.Contains(err.Error(), "could not import") {
+							} else if strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") {
+								if opts & OptFlagVerbose > 0 {
+									fmt.Printf(FmtStr, err, WrnStr)
+								}
 							} else if strings.Contains(err.Error(), "declared but not used") {
 								fmt.Printf(FmtStr, err, WrnStr)
 							} else {
