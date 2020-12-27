@@ -148,6 +148,8 @@ Command line options:
 
 * `--no-spcomp`, `-n` - Generates a SourcePawn source-code file without trying to invoke the SourcePawn compiler.
 
+* `--verbose`, `-v` - prints additional warnings.
+
 If you need help or have any question, simply file an issue with **\[HELP\]** in the title.
 
 
