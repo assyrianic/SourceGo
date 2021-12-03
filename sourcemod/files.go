@@ -38,6 +38,7 @@ const (
 
 
 type PathType int
+type PathStr = [PLATFORM_MAX_PATH]char
 var Path_SM PathType
 
 

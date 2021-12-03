@@ -293,12 +293,7 @@ func GeneratePluginFile(file *ast.File) string {
 			plugin_src_code.WriteString("\n\n")
 			for i, method := range struc.Methods {
 				plugin_src_code.WriteString(single_tab + method.RetType + " " + method.Name + "(")
-				for index, param := range method.Params {
-					plugin_src_code.WriteString(param)
-					if index+1 != len(method.Params) {
-						plugin_src_code.WriteString(", ")
-					}
-				}
+				plugin_src_code.WriteString(strings.Join(method.Params, ", "))
 				plugin_src_code.WriteString(")" + method.Body.String())
 				if i+1 != len(struc.Methods) {
 					plugin_src_code.WriteString("\n")
@@ -329,12 +324,7 @@ func GeneratePluginFile(file *ast.File) string {
 	
 	for i, fn := range plugin.Funcs {
 		plugin_src_code.WriteString(fn.Storage + " " + fn.RetType + " " + fn.Name + "(")
-		for index, param := range fn.Params {
-			plugin_src_code.WriteString(param)
-			if index+1 != len(fn.Params) {
-				plugin_src_code.WriteString(", ")
-			}
-		}
+		plugin_src_code.WriteString(strings.Join(fn.Params, ", "))
 		plugin_src_code.WriteString(")")
 		plugin_src_code.WriteString(fn.Body.String())
 		if i+1 != len(plugin.Funcs) {
@@ -466,15 +456,7 @@ func (plugin *SMPlugin) MakeTypeSpec(type_spec *ast.TypeSpec) {
 				func_type.WriteString("void")
 			}
 			func_type.WriteString(" (")
-			
-			param_list := WriteParams(t.Params)
-			param_count := len(param_list)
-			for i, param := range param_list {
-				func_type.WriteString(param)
-				if i+1 != param_count {
-					func_type.WriteString(", ")
-				}
-			}
+			func_type.WriteString(strings.Join(WriteParams(t.Params), ", "))
 			func_type.WriteString(");")
 			plugin.Globals = append(plugin.Globals, func_type.String() + "\n")
 	}
@@ -559,7 +541,21 @@ func (cb *FuncBlock) MakeStmt(stmt ast.Stmt, flags int) {
 				/// TODO: make this more robust.
 				for i, e := range n.Lhs {
 					var_name := e.(*ast.Ident)
-					cb.Body.WriteString(tabstr + GetTypeString(n.Lhs[i], var_name.Name, false) + " = " + GetExprString(n.Rhs[i]))
+					switch exp := n.Rhs[i].(type) {
+						case *ast.CompositeLit:
+							cb.Body.WriteString(tabstr + GetTypeString(n.Lhs[i], var_name.Name, false) +" = {\n")
+							tabstrone := WriteTabStr(cb.Tabs + 1)
+							for n, expr := range exp.Elts {
+								cb.Body.WriteString(tabstrone + GetExprString(expr))
+								if n+1 != len(exp.Elts) {
+									cb.Body.WriteString(",")
+								}
+								cb.Body.WriteString("\n")
+							}
+							cb.Body.WriteString(tabstr + "}")
+						default:
+							cb.Body.WriteString(tabstr + GetTypeString(n.Lhs[i], var_name.Name, false) + " = " + GetExprString(n.Rhs[i]))
+					}
 					if flags & GENFLAG_SEMICOLON > 0 {
 						cb.Body.WriteString(";")
 					}

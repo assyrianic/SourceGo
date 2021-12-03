@@ -49,7 +49,7 @@ type (
 	}
 	
 	Kektus    func(i, x  Vec3,  b    string, blocks        *Name, KC *int) Handle
-	EventFunc func(event *Event, name string, dontBroadcast bool)           Action
+	EventFunc func(event *Event, name string, dontBroadcast bool)          Action
 	VecFunc   func(vec Vec3) (float, float, float)
 )
 
@@ -123,7 +123,7 @@ func main() {
 		return a + b
 	}(1, 2)
 	
-	inlined_call_res1,inlined_call_res2 := func(a,b int) (int,int) {
+	inlined_call_res1, inlined_call_res2 := func(a,b int) (int,int) {
 		return a + b, a*b
 	}(1, 2)
 	
@@ -197,7 +197,7 @@ func GetProjPosToScreen(client int, vecDelta Vec3) (xpos, ypos float) {
 	return
 }
 
-func KeyValuesToStringMap(kv KeyValues, stringmap map[string][]char, hide_top bool, depth int, prefix *[]char) {
+func KeyValuesToStringMap(kv KeyValues, stringmap StringMap, hide_top bool, depth int, prefix *[]char) {
 	type SectStr = [128]char
 	for {
 		var section_name SectStr
@@ -236,7 +236,7 @@ func KeyValuesToStringMap(kv KeyValues, stringmap map[string][]char, hide_top bo
 				
 				var value SectStr
 				kv.GetString(NULL_STRING, value, len(value), NULL_STRING)
-				stringmap[key] = value
+				stringmap.SetValue(key, value)
 			}
 		}
 		
@@ -244,4 +244,8 @@ func KeyValuesToStringMap(kv KeyValues, stringmap map[string][]char, hide_top bo
 			break
 		}
 	}
+}
+
+func GetQueryRes(dbr DBResultSet) (int, float) {
+	return dbr.FetchInt(0, nil), dbr.FetchFloat(1, nil)
 }

@@ -146,8 +146,8 @@ func GetDistGainFromSoundLevel(soundlevel int, distance float) float
 
 
 type (
-	AmbientSHook func(sample [PLATFORM_MAX_PATH]char, entity *int, volume *float, level, pitch *int, pos *Vec3, flags *int, delay *float) Action
-	NormalSHook func(clients [MAXPLAYERS]int, numClients *int, sample [PLATFORM_MAX_PATH]char, entity, channel *int, volume *float, level, pitch, flags *int, soundEntry [PLATFORM_MAX_PATH]char, seed *int) Action
+	AmbientSHook func(sample PathStr, entity *int, volume *float, level, pitch *int, pos *Vec3, flags *int, delay *float) Action
+	NormalSHook func(clients [MAXPLAYERS]int, numClients *int, sample PathStr, entity, channel *int, volume *float, level, pitch, flags *int, soundEntry PathStr, seed *int) Action
 )
 
 func AddAmbientSoundHook(hook AmbientSHook)

@@ -121,7 +121,6 @@ becomes:
 char[] my_str = new char[size];
 ```
 
-
 ### Planned Features
 * Generate Natives and Forwards with an include file for them.
 * Abstract, type-based syntax translation for higher data types like `StringMap` and `ArrayList`.
@@ -144,7 +143,7 @@ Command line options:
 
 * `--help`, `-h` - Prints help list.
 
-* `--version`, `-v` - Prints the version of SourceGo.
+* `--version` - Prints the version of SourceGo.
 
 * `--no-spcomp`, `-n` - Generates a SourcePawn source-code file without trying to invoke the SourcePawn compiler.
 

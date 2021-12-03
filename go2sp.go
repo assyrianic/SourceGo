@@ -119,7 +119,7 @@ func main() {
 						DisableUnusedImportCheck: true,
 						Error: func(err error) {
 							if strings.Contains(err.Error(), "could not import") {
-							} else if strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") {
+							} else if strings.Contains(err.Error(), "cannot convert") || strings.Contains(err.Error(), "variable of type") || strings.Contains(err.Error(), "value of type") || strings.Contains(err.Error(), "too few arguments in call") {
 								if opts & OptFlagVerbose > 0 {
 									fmt.Printf(FmtStr, err, WrnStr)
 								}
