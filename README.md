@@ -1,9 +1,9 @@
-# Go2SourcePawn
+# SourceGo
 v1.4 beta
 
 ## Introduction
 
-**Go2SourcePawn** is a transpiler that transforms a subset of Golang code to equivalent SourcePawn. The rationale behind Go2SourcePawn is to automate as much of the boilerplate possible when creating SourcePawn plugins.
+**SourceGo** is a transpiler that transforms a subset of Golang code to equivalent SourcePawn. The rationale behind SourceGo is to automate as much of the boilerplate possible when creating SourcePawn plugins.
 
 ### Purpose
 
@@ -47,6 +47,13 @@ Becomes:
 ```go
 var players [MAXPLAYERS+1]Entity
 for index, player := range players {
+	/// code;
+}
+```
+```c
+for (int index = 0; index < sizeof(players); index++)
+{
+	player = players[index];
 	/// code;
 }
 ```
