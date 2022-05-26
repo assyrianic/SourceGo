@@ -60,6 +60,7 @@ for (int index = 0; index < sizeof(players); index++)
 
 * Switch statements with and without an expression.
 ```go
+// Go
 switch x {
 	case 1, 2:
 	default:
@@ -71,7 +72,25 @@ switch {
 	default:
 }
 ```
+```sourcepawn
+/// SourcePawn
+switch (x)
+{
+	case 1, 2:
+	{
+	}
+	default:
+	{
+	}
+}
 
+if (x < 10 || x+y < 10.0)
+{
+}
+else
+{
+}
+```
 Expression-less switchs are useful for a more compact if-else-if series.
 
 
@@ -105,6 +124,15 @@ public void OnClientPutInServer(int client) {}
 my_timer := CreateTimer(2.0, func(timer Timer, data any) Action {
 	return Plugin_Continue
 }, 0, TIMER_REPEAT)
+```
+```sourcepawn
+/// SourcePawn
+Handle my_timer = CreateTimer(2.0, SrcGoFuncTemp1, 0, TIMER_REPEAT);
+...
+public Action SrcGoFuncTemp1(Handle hTimer, any data)
+{
+	return Plugin_Continue;
+}
 ```
 
 * Inline SourcePawn code using the builtin function `__sp__` - for those parts of SourcePawn that just can't be generated (like using new or making a methodmap from scratch).
