@@ -1,5 +1,5 @@
-module github.com/assyrianic/Go2SourcePawn/srcgo/ast_to_sp
+module github.com/assyrianic/SourceGo/srcgo/ast_to_sp
 
 go 1.17
 
-replace github.com/assyrianic/Go2SourcePawn/srcgo/ast_transform => ./srcgo/ast_transform
+replace github.com/assyrianic/SourceGo/srcgo/ast_transform => ./srcgo/ast_transform
