@@ -1,3 +1,3 @@
-module github.com/assyrianic/Go2SourcePawn/srcgo/ast_transform
+module github.com/assyrianic/SourceGo/srcgo/ast_transform
 
 go 1.17
