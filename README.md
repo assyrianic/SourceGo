@@ -53,7 +53,7 @@ for index, player := range players {
 ```c
 for (int index = 0; index < sizeof(players); index++)
 {
-	player = players[index];
+	int player = players[index];
 	/// code;
 }
 ```
